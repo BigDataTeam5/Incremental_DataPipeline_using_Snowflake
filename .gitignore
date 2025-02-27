@@ -5,3 +5,4 @@ src/data_masker/data_masker.zip
 src/data_masker/requirements.snowflake.txt
 .vscode/settings.json
 .env
+venv/

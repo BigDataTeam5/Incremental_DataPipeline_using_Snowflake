@@ -1,0 +1,4 @@
+snowflake-snowpark-python[pandas]
+snowflake-cli-labs
+python-dotenv
+pytest

@@ -2,7 +2,6 @@ import requests
 import pandas as pd
 import boto3
 import io
- 
 # AWS S3 Configuration
 AWS_ACCESS_KEY = "AKIA4WJPWIY6YZDSM75N"
 AWS_SECRET_KEY = "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"
