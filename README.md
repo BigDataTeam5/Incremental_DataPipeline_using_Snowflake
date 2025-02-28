@@ -1,49 +1,8 @@
-# CI/CD with Snowflake: Data Masking UDF Lab
-
-This repository contains the code for a CI/CD pipeline with Snowflake, demonstrating how to build, test, and deploy a data masking User-Defined Function (UDF) using GitHub Actions.
-
 
 
 ![co2_pipeline_simplified9 (2)](https://github.com/user-attachments/assets/b083b8be-01b4-4cd0-a95a-8fe5f85aae69)
 
 
-## Overview
-
-The Data Masking UDF provides functionality to mask Personally Identifiable Information (PII) such as:
-- Email addresses
-- Phone numbers
-- Credit card numbers
-- Social Security Numbers (SSNs)
-
-The UDF supports different masking levels (high, medium, low) and is implemented using Snowpark Python.
-
-## Project Structure
-
-```
-snowflake-cicd-lab/
-├── .github/
-│   └── workflows/
-│       └── snowpark-ci-cd.yml     # GitHub Actions workflow
-├── config/
-│   ├── dev.yml                    # Development environment config
-│   └── prod.yml                   # Production environment config
-├── src/
-│   └── data_masker/               # Snowpark UDF project
-│       ├── requirements.txt       # Dependencies
-│       ├── snowflake.yml          # Snowflake project definition
-│       └── data_masker/
-│           ├── __init__.py
-│           └── function.py        # UDF implementation
-├── scripts/
-│   ├── setup_snowflake.sql        # Initial setup script
-│   ├── load_sample_data.sql       # Load sample data with PII
-│   ├── test_udf.sql               # SQL tests for the UDF
-│   └── cleanup.sql                # Cleanup script
-├── tests/
-│   └── test_data_masker.py        # Python unit tests
-├── deploy_snowpark_app.py         # Manual deployment script
-└── README.md                      # This file
-```
 
 ## Prerequisites
 
