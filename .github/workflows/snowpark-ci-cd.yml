@@ -110,126 +110,26 @@ jobs:
       - name: Deploy UDFs and Stored Procedures
         run: |
           echo "Deploying UDFs and Stored Procedures..."
-          # Use the connection parameters directly
-          snow sql --accountname $SNOWFLAKE_ACCOUNT \
-                    --user $SNOWFLAKE_USER \
-                    --password $SNOWFLAKE_PASSWORD \
-                    --warehouse $SNOWFLAKE_WAREHOUSE \
-                    --database $DATABASE_NAME \
-                    --schema $SCHEMA_NAME \
-                    -f scripts/setup_${ENVIRONMENT}.sql
-          echo "Deploying CO2 Volatility UDF..."
-          cd udfs_and_spoc/python_udf
-          snow snowpark build \
-              --accountname $SNOWFLAKE_ACCOUNT \
-              --user $SNOWFLAKE_USER \
-              --password $SNOWFLAKE_PASSWORD \
-              --warehouse $SNOWFLAKE_WAREHOUSE \
-              --database $DATABASE_NAME \
-              --schema $SCHEMA_NAME
-          snow snowpark deploy \
-              --accountname $SNOWFLAKE_ACCOUNT \
-              --user $SNOWFLAKE_USER \
-              --password $SNOWFLAKE_PASSWORD \
-              --warehouse $SNOWFLAKE_WAREHOUSE \
-              --database $DATABASE_NAME \
-              --schema $SCHEMA_NAME
-          cd ../..
-         
-          # 2. Deploy Daily CO2 Changes UDF
-          cd udfs_and_spoc/daily_co2_changes
-          echo "Deploying Daily CO2 Changes UDF..."
-          snow snowpark build \
-              --accountname $SNOWFLAKE_ACCOUNT \
-              --user $SNOWFLAKE_USER \
-              --password $SNOWFLAKE_PASSWORD \
-              --warehouse $SNOWFLAKE_WAREHOUSE \
-              --database $DATABASE_NAME \
-              --schema $SCHEMA_NAME
-          snow snowpark deploy \
-              --accountname $SNOWFLAKE_ACCOUNT \
-              --user $SNOWFLAKE_USER \
-              --password $SNOWFLAKE_PASSWORD \
-              --warehouse $SNOWFLAKE_WAREHOUSE \
-              --database $DATABASE_NAME \
-              --schema $SCHEMA_NAME
-          cd ../..
-         
-          # 3. Deploy Weekly CO2 Changes UDF
-          cd udfs_and_spoc/weekly_co2_changes
-          echo "Deploying Weekly CO2 Changes UDF..."
-          snow snowpark build \
-              --accountname $SNOWFLAKE_ACCOUNT \
-              --user $SNOWFLAKE_USER \
-              --password $SNOWFLAKE_PASSWORD \
-              --warehouse $SNOWFLAKE_WAREHOUSE \
-              --database $DATABASE_NAME \
-              --schema $SCHEMA_NAME
-          snow snowpark deploy \
-              --accountname $SNOWFLAKE_ACCOUNT \
-              --user $SNOWFLAKE_USER \
-              --password $SNOWFLAKE_PASSWORD \
-              --warehouse $SNOWFLAKE_WAREHOUSE \
-              --database $DATABASE_NAME \
-              --schema $SCHEMA_NAME
-          cd ../..
-         
-          # 4. Deploy CO2 Loading SP
-          cd udfs_and_spoc/loading_co2_data_sp
-          echo "Deploying CO2 Loading Stored Procedure..."
-          snow snowpark build \
-              --accountname $SNOWFLAKE_ACCOUNT \
-              --user $SNOWFLAKE_USER \
-              --password $SNOWFLAKE_PASSWORD \
-              --warehouse $SNOWFLAKE_WAREHOUSE \
-              --database $DATABASE_NAME \
-              --schema $SCHEMA_NAME
-          snow snowpark deploy \
-              --accountname $SNOWFLAKE_ACCOUNT \
-              --user $SNOWFLAKE_USER \
-              --password $SNOWFLAKE_PASSWORD \
-              --warehouse $SNOWFLAKE_WAREHOUSE \
-              --database $DATABASE_NAME \
-              --schema $SCHEMA_NAME
-          cd ../..
-         
-          # 5. Deploy CO2 Harmonized SP
-          cd udfs_and_spoc/co2_harmonized_sp
-          echo "Deploying CO2 Harmonized Stored Procedure..."
-          snow snowpark build \
-              --accountname $SNOWFLAKE_ACCOUNT \
-              --user $SNOWFLAKE_USER \
-              --password $SNOWFLAKE_PASSWORD \
-              --warehouse $SNOWFLAKE_WAREHOUSE \
-              --database $DATABASE_NAME \
-              --schema $SCHEMA_NAME
-          snow snowpark deploy \
-              --accountname $SNOWFLAKE_ACCOUNT \
-              --user $SNOWFLAKE_USER \
-              --password $SNOWFLAKE_PASSWORD \
-              --warehouse $SNOWFLAKE_WAREHOUSE \
-              --database $DATABASE_NAME \
-              --schema $SCHEMA_NAME
-          cd ../..
-         
-          # 6. Deploy CO2 Analytics SP
-          cd udfs_and_spoc/co2_analytical_sp
-          echo "Deploying CO2 Analytics Stored Procedure..."
-          snow snowpark build \
-              --accountname $SNOWFLAKE_ACCOUNT \
-              --user $SNOWFLAKE_USER \
-              --password $SNOWFLAKE_PASSWORD \
-              --warehouse $SNOWFLAKE_WAREHOUSE \
-              --database $DATABASE_NAME \
-              --schema $SCHEMA_NAME
-          snow snowpark deploy \
-              --accountname $SNOWFLAKE_ACCOUNT \
-              --user $SNOWFLAKE_USER \
-              --password $SNOWFLAKE_PASSWORD \
-              --warehouse $SNOWFLAKE_WAREHOUSE \
-              --database $DATABASE_NAME \
-              --schema $SCHEMA_NAME
-          cd ../..
+          # Deploy using temporary connection
+          for dir in udfs_and_spoc/*; do
+            if [ -d "$dir" ]; then
+              echo "Deploying project in $dir"
+              cd "$dir"
+              snow snowpark build --temporary-connection \
+                  --account $SNOWFLAKE_ACCOUNT \
+                  --user $SNOWFLAKE_USER \
+                  --role $SNOWFLAKE_ROLE \
+                  --warehouse $SNOWFLAKE_WAREHOUSE \
+                  --database $DATABASE_NAME
+              snow snowpark deploy --replace --temporary-connection \
+                  --account $SNOWFLAKE_ACCOUNT \
+                  --user $SNOWFLAKE_USER \
+                  --role $SNOWFLAKE_ROLE \
+                  --warehouse $SNOWFLAKE_WAREHOUSE \
+                  --database $DATABASE_NAME
+              cd -
+            fi
+          done
 
       - name: Orchestrate Tasks
         run: |        
