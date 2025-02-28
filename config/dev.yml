@@ -1,5 +1,13 @@
-environment: "dev"
-database_name: "CICD_LAB_DEV"
-schema_name: "DATA_SECURITY"
-stage_name: "DEPLOYMENT"
-warehouse_name: "CICD_LAB_WH"
+env: "dev"
+database_name: "CO2_DB_DEV"
+role_name: "CO2_ROLE"
+warehouse_name: "CO2_WH"
+warehouse_size: "XSMALL"
+warehouse_suspend: 300
+s3_url: "s3://noa-co2-datapipeline/noaa-co2-data/"
+use_storage_integration: false
+schemas:
+  - "EXTERNAL"
+  - "RAW_CO2"
+  - "HARMONIZED_CO2"
+  - "ANALYTICS_CO2"
