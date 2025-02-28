@@ -120,41 +120,41 @@ jobs:
           # 2. Deploy Daily CO2 Changes UDF
           cd udfs_and_spoc/daily_co2_changes
           echo "Deploying Daily CO2 Changes UDF..."
-          snow snowpark build --connection-name $CONN_PROFILE
-          snow snowpark deploy --replace --connection-name $CONN_PROFILE
+          snow snowpark build
+          snow snowpark deploy 
           cd ../..
          
           # 3. Deploy Weekly CO2 Changes UDF
           cd udfs_and_spoc/weekly_co2_changes
           echo "Deploying Weekly CO2 Changes UDF..."
-          snow snowpark build --connection-name $CONN_PROFILE
-          snow snowpark deploy --replace --connection-name $CONN_PROFILE
+          snow snowpark build
+          snow snowpark deploy
           cd ../..
          
           # 4. Deploy CO2 Loading SP
           cd udfs_and_spoc/loading_co2_data_sp
           echo "Deploying CO2 Loading Stored Procedure..."
-          snow snowpark build --connection-name $CONN_PROFILE
-          snow snowpark deploy --replace --connection-name $CONN_PROFILE
+          snow snowpark build
+          snow snowpark deploy
           cd ../..
          
           # 5. Deploy CO2 Harmonized SP
           cd udfs_and_spoc/co2_harmonized_sp
           echo "Deploying CO2 Harmonized Stored Procedure..."
-          snow snowpark build --connection-name $CONN_PROFILE
-          snow snowpark deploy --replace --connection-name $CONN_PROFILE
+          snow snowpark build
+          snow snowpark deploy
           cd ../..
          
           # 6. Deploy CO2 Analytics SP
           cd udfs_and_spoc/co2_analytical_sp
           echo "Deploying CO2 Analytics Stored Procedure..."
-          snow snowpark build --connection-name $CONN_PROFILE
-          snow snowpark deploy --replace --connection-name $CONN_PROFILE
+          snow snowpark build
+          snow snowpark deploy
           cd ../..
 
       - name: Orchestrate Tasks
         run: |        
           echo "Orchestrating tasks for $ENVIRONMENT environment..."
-          snow sql -f scripts/orchestrate_tasks_${ENVIRONMENT}.sql --connection-name $CONN_PROFILE
+          snow sql -f scripts/orchestrate_tasks_${ENVIRONMENT}.sql
          
           echo "Deployment complete. Tasks successfully orchestrated."
