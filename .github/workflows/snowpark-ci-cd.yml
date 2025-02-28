@@ -59,6 +59,8 @@ jobs:
       SNOWFLAKE_WAREHOUSE: CO2_WH
       AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
       AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
+      DATABASE_NAME: ${{ secrets.DATABASE_NAME }}  # Add if needed for your setup
+      SCHEMA_NAME: ${{ secrets.SCHEMA_NAME }}      # Add if needed for your setup
 
     steps:
       - uses: actions/checkout@v3
@@ -79,16 +81,10 @@ jobs:
             echo "ENVIRONMENT=prod" >> $GITHUB_ENV
             echo "DATABASE_NAME=CO2_DB_PROD" >> $GITHUB_ENV
             echo "CONN_PROFILE=prod" >> $GITHUB_ENV
-            echo "SNOWFLAKE_USER=${{ secrets.SNOWFLAKE_USER }}" >> $GITHUB_ENV
-            echo "SNOWFLAKE_PASSWORD=${{ secrets.SNOWFLAKE_PASSWORD }}" >> $GITHUB_ENV
-            echo "SNOWFLAKE_ACCOUNT=${{ secrets.SNOWFLAKE_ACCOUNT }}" >> $GITHUB_ENV
-            echo "SNOWFLAKE_WAREHOUSE=${{ secrets.SNOWFLAKE_WAREHOUSE }}" >> $GITHUB_ENV
           else
             echo "ENVIRONMENT=dev" >> $GITHUB_ENV
             echo "DATABASE_NAME=CO2_DB_DEV" >> $GITHUB_ENV
             echo "CONN_PROFILE=dev" >> $GITHUB_ENV
-            echo "SNOWFLAKE_USER=${{ secrets.SNOWFLAKE_DEV_USER }}" >> $GITHUB_ENV
-            echo "SNOWFLAKE_PASSWORD=${{ secrets.SNOWFLAKE_DEV_PASSWORD }}" >> $GITHUB_ENV
           fi
 
       - name: Debug Environment Variables Before Deployment
@@ -99,17 +95,6 @@ jobs:
           echo "SNOWFLAKE_ACCOUNT=$SNOWFLAKE_ACCOUNT"
           echo "SNOWFLAKE_USER=$SNOWFLAKE_USER"
           echo "SNOWFLAKE_WAREHOUSE=$SNOWFLAKE_WAREHOUSE"
-
-      - name: Create Snowflake Connection
-        run: |
-          echo "Creating Snowflake connection..."
-          snow connection create --name prod \
-            --account $SNOWFLAKE_ACCOUNT \
-            --user $SNOWFLAKE_USER \
-            --password $SNOWFLAKE_PASSWORD \
-            --warehouse $SNOWFLAKE_WAREHOUSE \
-            --database CO2_DB_PROD \
-            --schema RAW_CO2
 
       - name: Generate configuration and SQL files
         run: |
@@ -124,10 +109,9 @@ jobs:
 
       - name: Deploy UDFs and Stored Procedures
         run: |
-          echo "Setting connection to $CONN_PROFILE"
-          snow connection set-default $CONN_PROFILE
+          echo "Deploying UDFs and Stored Procedures..."
+          snow sql -f scripts/setup_${ENVIRONMENT}.sql --connection-name $CONN_PROFILE
           echo "Deploying CO2 Volatility UDF..."
-          snow sql -f scripts/setup_${ENVIRONMENT}.sql
           cd udfs_and_spoc/python_udf
           snow snowpark build
           snow snowpark deploy
