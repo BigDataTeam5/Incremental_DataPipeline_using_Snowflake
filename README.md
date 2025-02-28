@@ -2,6 +2,9 @@
 
 This repository contains the code for a CI/CD pipeline with Snowflake, demonstrating how to build, test, and deploy a data masking User-Defined Function (UDF) using GitHub Actions.
 
+
+![co2_pipeline_simplified](https://github.com/user-attachments/assets/04ffce11-96be-432d-aba4-d5bfe2f2266f)
+
 ## Overview
 
 The Data Masking UDF provides functionality to mask Personally Identifiable Information (PII) such as:
