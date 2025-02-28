@@ -4,7 +4,7 @@
 
   Generated from template for {{ env.upper() }} environment
   Generated on: {{ current_date }}
------------------------------------------------------------------------------*/
+ -----------------------------------------------------------------------------*/
 
 -- Step 0: Use an admin-level role so we can create/alter objects.
 USE ROLE ACCOUNTADMIN;
@@ -17,47 +17,47 @@ SELECT 'ENV variable set to: ' || $env AS ENVIRONMENT_CHECK;
 -- Step 2: Create/Configure roles and warehouses
 SET MY_USER = CURRENT_USER();
 
-CREATE OR REPLACE ROLE {{ config.role_name }};
-GRANT ROLE {{ config.role_name }} TO ROLE SYSADMIN;
-GRANT ROLE {{ config.role_name }} TO USER IDENTIFIER($MY_USER);
+CREATE OR REPLACE ROLE CO2_ROLE_{{ env.upper() }};
+GRANT ROLE CO2_ROLE_{{ env.upper() }} TO ROLE SYSADMIN;
+GRANT ROLE CO2_ROLE_{{ env.upper() }} TO USER IDENTIFIER($MY_USER);
 
 -- Grant necessary privileges 
-GRANT CREATE DATABASE ON ACCOUNT TO ROLE {{ config.role_name }};
-GRANT CREATE WAREHOUSE ON ACCOUNT TO ROLE {{ config.role_name }};
-GRANT EXECUTE TASK ON ACCOUNT TO ROLE {{ config.role_name }};
-GRANT MONITOR EXECUTION ON ACCOUNT TO ROLE {{ config.role_name }};
-GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE {{ config.role_name }};
+GRANT CREATE DATABASE ON ACCOUNT TO ROLE CO2_ROLE_{{ env.upper() }};
+GRANT CREATE WAREHOUSE ON ACCOUNT TO ROLE CO2_ROLE_{{ env.upper() }};
+GRANT EXECUTE TASK ON ACCOUNT TO ROLE CO2_ROLE_{{ env.upper() }};
+GRANT MONITOR EXECUTION ON ACCOUNT TO ROLE CO2_ROLE_{{ env.upper() }};
+GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE CO2_ROLE_{{ env.upper() }};
 
 -- Create or replace warehouse with environment-specific settings
-CREATE OR REPLACE WAREHOUSE {{ config.warehouse_name }}
+CREATE OR REPLACE WAREHOUSE CO2_WH_{{ env.upper() }}
   WAREHOUSE_SIZE = {{ config.warehouse_size }}
   AUTO_SUSPEND   = {{ config.warehouse_suspend }}
   AUTO_RESUME    = TRUE;
-GRANT OWNERSHIP ON WAREHOUSE {{ config.warehouse_name }} TO ROLE {{ config.role_name }};
+GRANT OWNERSHIP ON WAREHOUSE CO2_WH_{{ env.upper() }} TO ROLE CO2_ROLE_{{ env.upper() }};
 
 -- Step 3: Create the environment-specific database
 CREATE OR REPLACE DATABASE {{ config.database_name }};
 
 -- Grant ownership to role
-GRANT OWNERSHIP ON DATABASE {{ config.database_name }} TO ROLE {{ config.role_name }};
+GRANT OWNERSHIP ON DATABASE {{ config.database_name }} TO ROLE CO2_ROLE_{{ env.upper() }};
 
 -- Step 4: Switch context to the configured role/warehouse/database
-USE ROLE {{ config.role_name }};
-USE WAREHOUSE {{ config.warehouse_name }};
+USE ROLE CO2_ROLE_{{ env.upper() }};
+USE WAREHOUSE CO2_WH_{{ env.upper() }};
 USE DATABASE {{ config.database_name }};
 
 -- Step 5: Create schemas - same names for both environments
 {% for schema in config.schemas %}
 CREATE OR REPLACE SCHEMA {{ schema }};
-GRANT OWNERSHIP ON SCHEMA {{ schema }} TO ROLE {{ config.role_name }};
+GRANT OWNERSHIP ON SCHEMA {{ schema }} TO ROLE CO2_ROLE_{{ env.upper() }};
 {% endfor %}
 
 -- Grant privileges on schemas
 {% for schema in config.schemas %}
-GRANT CREATE FUNCTION ON SCHEMA {{ schema }} TO ROLE {{ config.role_name }};
-GRANT CREATE TABLE ON SCHEMA {{ schema }} TO ROLE {{ config.role_name }};
+GRANT CREATE FUNCTION ON SCHEMA {{ schema }} TO ROLE CO2_ROLE_{{ env.upper() }};
+GRANT CREATE TABLE ON SCHEMA {{ schema }} TO ROLE CO2_ROLE_{{ env.upper() }};
 {% if config.env == 'PROD' %}
-GRANT CREATE PROCEDURE ON SCHEMA {{ schema }} TO ROLE {{ config.role_name }};
+GRANT CREATE PROCEDURE ON SCHEMA {{ schema }} TO ROLE CO2_ROLE_{{ env.upper() }};
 {% endif %}
 {% endfor %}
 
@@ -76,18 +76,14 @@ CREATE OR REPLACE FILE FORMAT CSV_CO2_FORMAT
 -- Create stage using AWS credentials from environment
 CREATE OR REPLACE STAGE NOAA_CO2_STAGE
   URL = '{{ config.s3_url }}'
-  {% if config.use_storage_integration %}
-  STORAGE_INTEGRATION = {{ config.storage_integration_name }}
-  {% else %}
   CREDENTIALS = (AWS_KEY_ID = '{{ aws_access_key }}' AWS_SECRET_KEY = '{{ aws_secret_key }}')
-  {% endif %}
   FILE_FORMAT = CSV_CO2_FORMAT
   COMMENT = 'Mauna Loa CO2 data stage ({{ env }} environment)'
 ;
 
 -- Grant privileges on stage
-GRANT READ ON STAGE NOAA_CO2_STAGE TO ROLE {{ config.role_name }};
-GRANT WRITE ON STAGE NOAA_CO2_STAGE TO ROLE {{ config.role_name }};
+GRANT READ ON STAGE NOAA_CO2_STAGE TO ROLE CO2_ROLE_{{ env.upper() }};
+GRANT WRITE ON STAGE NOAA_CO2_STAGE TO ROLE CO2_ROLE_{{ env.upper() }};
 
 -- Done!
 SELECT 'Setup complete for {{ env.upper() }} environment. Database: {{ config.database_name }}' AS SETUP_MESSAGE;

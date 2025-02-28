@@ -1,14 +1,20 @@
 env: "prod"
 database_name: "CO2_DB_PROD"
-role_name: "CO2_ROLE"
-warehouse_name: "CO2_WH"
+role_name: "CO2_ROLE_PROD"
+warehouse_name: "CO2_WH_PROD"
 warehouse_size: "MEDIUM"  # Larger size for production
 warehouse_suspend: 600    # Longer auto-suspend time
 s3_url: "s3://noa-co2-datapipeline/noaa-co2-data/"
-use_storage_integration: true  # Use storage integration in production
-storage_integration_name: "S3_CO2_INTEGRATION"
+use_storage_integration: false
 schemas:
   - "EXTERNAL"
   - "RAW_CO2"
   - "HARMONIZED_CO2"
   - "ANALYTICS_CO2"
+
+# Task configuration
+task_schedule: 'USING CRON 0 10 * * * UTC'  # Runs at 10 AM UTC daily
+execute_tasks_immediately: true  # Set to false if you don't want to run tasks immediately
+
+# Storage configuration
+storage_integration_name: CO2_S3_INTEGRATION

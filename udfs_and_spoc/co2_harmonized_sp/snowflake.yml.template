@@ -1,0 +1,13 @@
+definition_version: 1
+snowpark:
+  project_name: "co2_harmonized_project"
+  stage_name: "HARMONIZED_CO2.deployment"
+  src: "co2_harmonized_sp/"
+  procedures:
+    - name: "co2_harmonized_sp"
+      database: "{{ DATABASE_NAME }}"
+      schema: "HARMONIZED_CO2"
+      handler: "function.main"
+      runtime: "3.10"
+      returns: "string"
+      signature: []  # Required field - empty array for no parameters

@@ -1,0 +1,93 @@
+/*-----------------------------------------------------------------------------
+Orchestrate CO₂ Data Pipeline Tasks - {{ env.upper() }} Environment
+Script:       orchestrate_tasks_{{ env }}.sql
+Generated on: {{ current_date }}
+-----------------------------------------------------------------------------*/
+
+-- Set the execution context for {{ env.upper() }} environment
+USE ROLE CO2_ROLE_{{ env.upper() }};
+USE WAREHOUSE CO2_WH_{{ env.upper() }};
+USE DATABASE {{ config.database_name }};
+
+-- Set the default schema
+USE SCHEMA ANALYTICS_CO2;
+
+-- ----------------------------------------------------------------------------
+-- Step #1: Suspend existing tasks (to allow modifications)
+-- ----------------------------------------------------------------------------
+ALTER TASK IF EXISTS CO2_RAW_DATA_TASK SUSPEND;
+ALTER TASK IF EXISTS CO2_HARMONIZED_TASK SUSPEND;
+ALTER TASK IF EXISTS CO2_ANALYTICS_TASK SUSPEND;
+
+-- ----------------------------------------------------------------------------
+-- Step #2: Drop any existing tasks (to ensure a clean setup)
+-- ----------------------------------------------------------------------------
+DROP TASK IF EXISTS CO2_RAW_DATA_TASK;
+DROP TASK IF EXISTS CO2_HARMONIZED_TASK;
+DROP TASK IF EXISTS CO2_ANALYTICS_TASK;
+
+-- ----------------------------------------------------------------------------
+-- Step #3: Create tasks for the CO2 data pipeline in {{ env.upper() }} environment
+-- ----------------------------------------------------------------------------
+
+-- Task to load the latest CO2 data
+CREATE OR REPLACE TASK CO2_RAW_DATA_TASK
+WAREHOUSE = CO2_WH_{{ env.upper() }}
+SCHEDULE = '{{ config.task_schedule }}'
+AS
+CALL {{ config.database_name }}.RAW_CO2.LOADING_CO2_DATA_SP();
+
+-- Task to transform raw data into harmonized data
+CREATE OR REPLACE TASK CO2_HARMONIZED_TASK
+WAREHOUSE = CO2_WH_{{ env.upper() }}
+AFTER CO2_RAW_DATA_TASK
+WHEN SYSTEM$STREAM_HAS_DATA('RAW_CO2.CO2_DATA_STREAM')
+AS
+CALL {{ config.database_name }}.HARMONIZED_CO2.CO2_HARMONIZED_SP();
+
+-- Task to create analytics from harmonized data
+CREATE OR REPLACE TASK CO2_ANALYTICS_TASK
+WAREHOUSE = CO2_WH_{{ env.upper() }}
+AFTER CO2_HARMONIZED_TASK
+AS
+CALL {{ config.database_name }}.ANALYTICS_CO2.CO2_ANALYTICS_SP();
+
+-- ----------------------------------------------------------------------------
+-- Step #4: Resume all tasks so they are ready for execution
+-- ----------------------------------------------------------------------------
+ALTER TASK CO2_RAW_DATA_TASK RESUME;
+ALTER TASK CO2_HARMONIZED_TASK RESUME;
+ALTER TASK CO2_ANALYTICS_TASK RESUME;
+
+-- ----------------------------------------------------------------------------
+-- Step #5: Optionally execute the task chain manually for immediate testing
+-- ----------------------------------------------------------------------------
+{% if config.execute_tasks_immediately %}
+-- Execute the first task in the chain
+EXECUTE TASK CO2_RAW_DATA_TASK;
+
+-- Wait a moment and then check task execution history
+SELECT 
+    NAME,
+    DATABASE_NAME,
+    SCHEMA_NAME,
+    STATE,
+    SCHEDULED_TIME,
+    COMPLETED_TIME,
+    ERROR_MESSAGE
+FROM TABLE(INFORMATION_SCHEMA.TASK_HISTORY(
+    SCHEDULED_TIME_RANGE_START=>DATEADD('DAY',-1,CURRENT_TIMESTAMP()),
+    RESULT_LIMIT => 100))
+ORDER BY SCHEDULED_TIME DESC;
+{% else %}
+-- Tasks are now set up but not executed automatically.
+-- To execute manually, use: EXECUTE TASK {{ config.database_name }}.RAW_CO2.CO2_RAW_DATA_TASK;
+
+-- Display the task status
+SHOW TASKS IN DATABASE {{ config.database_name }};
+{% endif %}
+
+-- ----------------------------------------------------------------------------
+-- Done! CO2 data pipeline is now orchestrated for {{ env.upper() }} environment
+-- ----------------------------------------------------------------------------
+SELECT '{{ env.upper() }} CO2 Data Pipeline Orchestration Complete' AS STATUS;
