@@ -28,14 +28,16 @@ jobs:
           echo "SNOWFLAKE_WAREHOUSE=${{ secrets.SNOWFLAKE_WAREHOUSE }}"
       - name: Run tests
         run: |
-          pytest tests/test_s3_connection.py
-          pytest tests/testing_snowflake_connection.py
-          pytest tests/test_volatility_co2ppm.py
-          pytest tests/test_daily_co2_changes.py
-          pytest tests/test_weekly_co2_changes.py
-          pytest tests/test_loading_co2_data_sp.py
-          pytest tests/test_co2_harmonized_sp.py
-          pytest tests/test_co2_analytical_sp.py
+          cd tests
+          pytest test_s3_connection.py
+          pytest testing_snowflake_connection.py
+          pytest test_volatility_co2ppm.py
+          pytest test_daily_co2_changes.py
+          pytest test_weekly_co2_changes.py
+          pytest test_loading_co2_data_sp.py
+          pytest test_co2_harmonized_sp.py
+          pytest test_co2_analytical_sp.py
+          cd ../..
  
   deploy:
     needs: test
