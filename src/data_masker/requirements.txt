@@ -1,8 +1,0 @@
-snowflake-snowpark-python
-pytest
-snowflake-cli-labs
-python-dotenv
-pytest
-jinja2
-pyyaml
-boto3

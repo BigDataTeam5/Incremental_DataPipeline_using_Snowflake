@@ -19,12 +19,6 @@ ALTER TASK IF EXISTS CO2_RAW_DATA_TASK SUSPEND;
 ALTER TASK IF EXISTS CO2_HARMONIZED_TASK SUSPEND;
 ALTER TASK IF EXISTS CO2_ANALYTICS_TASK SUSPEND;
 
--- ----------------------------------------------------------------------------
--- Step #2: Drop any existing tasks (to ensure a clean setup)
--- ----------------------------------------------------------------------------
-DROP TASK IF EXISTS CO2_RAW_DATA_TASK;
-DROP TASK IF EXISTS CO2_HARMONIZED_TASK;
-DROP TASK IF EXISTS CO2_ANALYTICS_TASK;
 
 -- ----------------------------------------------------------------------------
 -- Step #3: Create tasks for the CO2 data pipeline in {{ env.upper() }} environment

@@ -7,11 +7,20 @@ from dotenv import load_dotenv
 import json
 
 def update_environment(env):
+    # Get the base directory (project root)
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    
+    # Create the templates directory if it doesn't exist
+    templates_dir = os.path.join(base_dir, "templates")
+    os.makedirs(templates_dir, exist_ok=True)
+    
+    # Write environment to JSON file
+    env_file_path = os.path.join(templates_dir, "environment.json")
     data = {"environment": env}
-    with open("templates/environment.json", "w", encoding="utf-8") as json_file:
+    with open(env_file_path, "w", encoding="utf-8") as json_file:
         json.dump(data, json_file, indent=4)
     print(f"Environment set to: {env}")
-
+    print(f"Environment file created at: {env_file_path}")
 def render_templates(env_name):
     """
     Render all templates for the specified environment.

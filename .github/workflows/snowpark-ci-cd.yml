@@ -22,30 +22,14 @@ jobs:
           pip install -r requirements.txt
       - name: Debug Environment Variables
         run: |
-          echo "SNOWFLAKE_ACCOUNT=${{ secrets.SNOWFLAKE_ACCOUNT }}"
-          echo "SNOWFLAKE_USER=${{ secrets.SNOWFLAKE_USER }}"
-          echo "SNOWFLAKE_PASSWORD=${{ secrets.SNOWFLAKE_PASSWORD }}"
-          echo "SNOWFLAKE_WAREHOUSE=${{ secrets.SNOWFLAKE_WAREHOUSE }}"
-          echo "AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }}"
-          echo "AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }}"
-      - name: Run tests
-        env:
-          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
-          SNOWFLAKE_ROLE: CO2_ROLE  # Default role
-          SNOWFLAKE_WAREHOUSE: CO2_WH
-          SNOWFLAKE_SCHEMA: RAW_CO2
-          AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
-          AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
-        run: |
-          cd tests
-          pytest testing_snowflake_connection.py
-          pytest testing_s3_connection.py
-          pytest testing_volatility_co2ppm.py
-          pytest testing_daily_percent_change.py
-          pytest testing_weekly_changes.py
-          cd ../..
+          pytest tests/testing_snowflake_connection.py
+          pytest tests/test_s3_connection.py
+          pytest tests/test_volatility_co2ppm.py
+          pytest tests/test_daily_co2_changes.py
+          pytest tests/test_weekly_co2_changes.py
+          pytest tests/test_loading_co2_data_sp.py
+          pytest tests/test_co2_harmonized_sp.py
+          pytest tests/test_co2_analytical_sp.py
 
   deploy:
     needs: test
@@ -71,7 +55,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
+      
       - name: Set environment variables
         run: |
           echo "AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }}" >> $GITHUB_ENV
@@ -79,78 +63,70 @@ jobs:
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "ENVIRONMENT=prod" >> $GITHUB_ENV
             echo "DATABASE_NAME=CO2_DB_PROD" >> $GITHUB_ENV
-            echo "SNOWFLAKE_ROLE=CO2_ROLE_PROD" >> $GITHUB_ENV  # Set prod role
+            echo "CONN_PROFILE=prod" >> $GITHUB_ENV
           else
             echo "ENVIRONMENT=dev" >> $GITHUB_ENV
             echo "DATABASE_NAME=CO2_DB_DEV" >> $GITHUB_ENV
-            echo "SNOWFLAKE_ROLE=CO2_ROLE_DEV" >> $GITHUB_ENV  # Set dev role
-          fi
-
-      - name: Debug Environment Variables Before Deployment
-        run: |
-          echo "ENVIRONMENT=$ENVIRONMENT"
-          echo "DATABASE_NAME=$DATABASE_NAME"
-          echo "SNOWFLAKE_ROLE=$SNOWFLAKE_ROLE"
-          echo "SNOWFLAKE_ACCOUNT=$SNOWFLAKE_ACCOUNT"
-          echo "SNOWFLAKE_USER=$SNOWFLAKE_USER"
-          echo "SNOWFLAKE_WAREHOUSE=$SNOWFLAKE_WAREHOUSE"
-
+            echo "CONN_PROFILE=dev" >> $GITHUB_ENV
+      
       - name: Generate configuration and SQL files
         run: |
           echo "AWS_ACCESS_KEY=$AWS_ACCESS_KEY" > .env
           echo "AWS_SECRET_KEY=$AWS_SECRET_KEY" >> .env
           python scripts/render_yaml.py $ENVIRONMENT
+          
+          # Run script to generate setup and orchestration SQL files
           python scripts/render_setup.py $ENVIRONMENT
-
-      - name: Check Snowflake CLI Version
-        run: |
-          snow --version
-
-      - name: Setup Snowflake
-        run: |
-          echo "Running setup SQL script..."
-          snow sql -f scripts/setup_${ENVIRONMENT}.sql \
-                    --accountname $SNOWFLAKE_ACCOUNT \
-                    --user $SNOWFLAKE_USER \
-                    --role $SNOWFLAKE_ROLE \
-                    --warehouse $SNOWFLAKE_WAREHOUSE \
-                    --database $DATABASE_NAME \
-                    --schema $SCHEMA_NAME \
-                    --temporary-connection
-
+      
       - name: Deploy UDFs and Stored Procedures
         run: |
-          echo "Deploying UDFs and Stored Procedures..."
-          # Deploy using temporary connection
-          for dir in udfs_and_spoc/*; do
-            if [ -d "$dir" ]; then
-              echo "Deploying project in $dir"
-              cd "$dir"
-              snow snowpark build --temporary-connection \
-                  --account $SNOWFLAKE_ACCOUNT \
-                  --user $SNOWFLAKE_USER \
-                  --role $SNOWFLAKE_ROLE \
-                  --warehouse $SNOWFLAKE_WAREHOUSE \
-                  --database $DATABASE_NAME
-              snow snowpark deploy --replace --temporary-connection \
-                  --account $SNOWFLAKE_ACCOUNT \
-                  --user $SNOWFLAKE_USER \
-                  --role $SNOWFLAKE_ROLE \
-                  --warehouse $SNOWFLAKE_WAREHOUSE \
-                  --database $DATABASE_NAME
-              cd -
-            fi
-          done
-
+          # 1. Deploy CO2 Volatility UDF
+          cd udfs_and_spoc/python_udf
+          echo "Deploying CO2 Volatility UDF..."
+          snow snowpark build --connection-name $CONN_PROFILE
+          snow snowpark deploy --replace --connection-name $CONN_PROFILE
+          cd ../..
+          
+          # 2. Deploy Daily CO2 Changes UDF
+          cd udfs_and_spoc/daily_co2_changes
+          echo "Deploying Daily CO2 Changes UDF..."
+          snow snowpark build --connection-name $CONN_PROFILE
+          snow snowpark deploy --replace --connection-name $CONN_PROFILE
+          cd ../..
+          
+          # 3. Deploy Weekly CO2 Changes UDF
+          cd udfs_and_spoc/weekly_co2_changes
+          echo "Deploying Weekly CO2 Changes UDF..."
+          snow snowpark build --connection-name $CONN_PROFILE
+          snow snowpark deploy --replace --connection-name $CONN_PROFILE
+          cd ../..
+          
+          # 4. Deploy CO2 Loading SP
+          cd udfs_and_spoc/loading_co2_data_sp
+          echo "Deploying CO2 Loading Stored Procedure..."
+          snow snowpark build --connection-name $CONN_PROFILE
+          snow snowpark deploy --replace --connection-name $CONN_PROFILE
+          cd ../..
+          
+          # 5. Deploy CO2 Harmonized SP
+          cd udfs_and_spoc/co2_harmonized_sp
+          echo "Deploying CO2 Harmonized Stored Procedure..."
+          snow snowpark build --connection-name $CONN_PROFILE
+          snow snowpark deploy --replace --connection-name $CONN_PROFILE
+          cd ../..
+          
+          # 6. Deploy CO2 Analytics SP
+          cd udfs_and_spoc/co2_analytical_sp
+          echo "Deploying CO2 Analytics Stored Procedure..."
+          snow snowpark build --connection-name $CONN_PROFILE
+          snow snowpark deploy --replace --connection-name $CONN_PROFILE
+          cd ../..
+      
       - name: Orchestrate Tasks
-        run: |        
+        run: |         
+          # orchestrate the tasks
           echo "Orchestrating tasks for $ENVIRONMENT environment..."
-          snow sql --accountname $SNOWFLAKE_ACCOUNT \
-                    --user $SNOWFLAKE_USER \
-                    --role $SNOWFLAKE_ROLE \
-                    --warehouse $SNOWFLAKE_WAREHOUSE \
-                    --database $DATABASE_NAME \
-                    --schema $SCHEMA_NAME \
-                    -f scripts/orchestrate_tasks_${ENVIRONMENT}.sql
-         
+          snow sql -f scripts/orchestrate_tasks_${ENVIRONMENT}.sql --connection-name $CONN_PROFILE
+          
+          # Log task execution status
           echo "Deployment complete. Tasks successfully orchestrated."
