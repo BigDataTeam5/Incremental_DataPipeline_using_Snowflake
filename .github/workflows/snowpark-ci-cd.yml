@@ -94,11 +94,11 @@ jobs:
          
           # Run script to generate setup and orchestration SQL files
           python scripts/render_setup.py $ENVIRONMENT
-          snow sql -f scripts/setup_${ENVIRONMENT}.sql
      
       - name: Deploy UDFs and Stored Procedures
         run: |
           # 1. Deploy CO2 Volatility UDF
+          snow sql -f scripts/setup_${ENVIRONMENT}.sql
           cd udfs_and_spoc/python_udf
           echo "Deploying CO2 Volatility UDF..."
           snow snowpark build
