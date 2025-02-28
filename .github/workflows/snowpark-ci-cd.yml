@@ -45,6 +45,8 @@ jobs:
           pytest testing_volatility_co2ppm.py
           pytest testing_daily_percent_change.py
           pytest testing_weekly_changes.py
+          pytest testing_co2_harmonized_sp.py
+          pytest testing_co2_analytical_sp.py
           cd ../..
  
   deploy:
