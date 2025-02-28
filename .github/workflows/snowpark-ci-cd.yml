@@ -29,14 +29,14 @@ jobs:
       - name: Run tests
         run: |
           cd tests
-          pytest test_s3_connection.py
+          pytest testing_s3_connection.py
           pytest testing_snowflake_connection.py
-          pytest test_volatility_co2ppm.py
-          pytest test_daily_co2_changes.py
-          pytest test_weekly_co2_changes.py
-          pytest test_loading_co2_data_sp.py
-          pytest test_co2_harmonized_sp.py
-          pytest test_co2_analytical_sp.py
+          pytest testing_volatility_co2ppm.py
+          pytest testing_daily_co2_changes.py
+          pytest testing_weekly_co2_changes.py
+          pytest testing_loading_co2_data_sp.py
+          pytest testing_co2_harmonized_sp.py
+          pytest testing_co2_analytical_sp.py
           cd ../..
  
   deploy:
