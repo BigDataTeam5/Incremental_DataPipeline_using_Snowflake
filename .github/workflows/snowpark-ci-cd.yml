@@ -59,8 +59,8 @@ jobs:
       SNOWFLAKE_WAREHOUSE: CO2_WH
       AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
       AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
-      DATABASE_NAME: ${{ secrets.DATABASE_NAME }}  # Add if needed for your setup
-      SCHEMA_NAME: ${{ secrets.SCHEMA_NAME }}      # Add if needed for your setup
+      DATABASE_NAME: CO2_DB_PROD # Or use a secret if needed
+      SCHEMA_NAME: RAW_CO2       # Or use a secret if needed
 
     steps:
       - uses: actions/checkout@v3
@@ -110,7 +110,8 @@ jobs:
       - name: Deploy UDFs and Stored Procedures
         run: |
           echo "Deploying UDFs and Stored Procedures..."
-          snow sql -f scripts/setup_${ENVIRONMENT}.sql
+          # Use the environment variables for connection
+          snow sql -f scripts/setup_${ENVIRONMENT}.sql  # No connection-name option
           echo "Deploying CO2 Volatility UDF..."
           cd udfs_and_spoc/python_udf
           snow snowpark build
@@ -121,40 +122,40 @@ jobs:
           cd udfs_and_spoc/daily_co2_changes
           echo "Deploying Daily CO2 Changes UDF..."
           snow snowpark build
-          snow snowpark deploy 
+          snow snowpark deploy --replace
           cd ../..
          
           # 3. Deploy Weekly CO2 Changes UDF
           cd udfs_and_spoc/weekly_co2_changes
           echo "Deploying Weekly CO2 Changes UDF..."
           snow snowpark build
-          snow snowpark deploy
+          snow snowpark deploy --replace
           cd ../..
          
           # 4. Deploy CO2 Loading SP
           cd udfs_and_spoc/loading_co2_data_sp
           echo "Deploying CO2 Loading Stored Procedure..."
           snow snowpark build
-          snow snowpark deploy
+          snow snowpark deploy --replace
           cd ../..
          
           # 5. Deploy CO2 Harmonized SP
           cd udfs_and_spoc/co2_harmonized_sp
           echo "Deploying CO2 Harmonized Stored Procedure..."
           snow snowpark build
-          snow snowpark deploy
+          snow snowpark deploy --replace
           cd ../..
          
           # 6. Deploy CO2 Analytics SP
           cd udfs_and_spoc/co2_analytical_sp
           echo "Deploying CO2 Analytics Stored Procedure..."
           snow snowpark build
-          snow snowpark deploy
+          snow snowpark deploy --replace
           cd ../..
 
       - name: Orchestrate Tasks
         run: |        
           echo "Orchestrating tasks for $ENVIRONMENT environment..."
-          snow sql -f scripts/orchestrate_tasks_${ENVIRONMENT}.sql
+          snow sql -f scripts/orchestrate_tasks_${ENVIRONMENT}.sql  # No connection-name option
          
           echo "Deployment complete. Tasks successfully orchestrated."
