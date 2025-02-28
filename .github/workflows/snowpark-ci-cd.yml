@@ -105,11 +105,11 @@ jobs:
       - name: Deploy UDFs and Stored Procedures
         run: |
           # 1. Deploy CO2 Volatility UDF
-          echo "ENVIRONMENT=${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}" >> $GITHUB_ENV
-          snow connection set-default $ENVIRONMENT
+          echo "Setting connection to $CONN_PROFILE"
+          snow connection set-default $CONN_PROFILE
+          echo "Deploying CO2 Volatility UDF..."
           snow sql -f scripts/setup_${ENVIRONMENT}.sql
           cd udfs_and_spoc/python_udf
-          echo "Deploying CO2 Volatility UDF..."
           snow snowpark build
           snow snowpark deploy
           cd ../..
