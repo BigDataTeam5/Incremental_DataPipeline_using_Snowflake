@@ -3,7 +3,8 @@
 This repository contains the code for a CI/CD pipeline with Snowflake, demonstrating how to build, test, and deploy a data masking User-Defined Function (UDF) using GitHub Actions.
 
 
-![co2_pipeline_simplified](https://github.com/user-attachments/assets/04ffce11-96be-432d-aba4-d5bfe2f2266f)
+![co2_pipeline_simplified7](https://github.com/user-attachments/assets/fbffc302-0238-45be-bd04-728e4606629d)
+
 
 ## Overview
 
@@ -134,59 +135,48 @@ The CI/CD pipeline is triggered automatically when you push to the repository:
 - Pushing to the `dev` branch deploys to the development environment
 - Pushing to the `main` branch deploys to the production environment
 
-1. Create a new branch and make a change to the UDF:
 
-```bash
-git checkout -b feature/update-udf
-# Make changes to src/data_masker/data_masker/function.py
-git add src/data_masker/data_masker/function.py
-git commit -m "Update UDF functionality"
-git push -u origin feature/update-udf
-```
 
-2. Create a pull request to merge into the `dev` branch
-3. After the PR is merged, the GitHub Actions workflow will deploy to DEV
-4. When ready for production, create a PR from `dev` to `main`
-5. After the PR is merged, the GitHub Actions workflow will deploy to PROD
-
-### 9. Clean Up When Finished
-
-```bash
-snowsql -f scripts/cleanup.sql
-```
-
-## UDF Usage Examples
-
-After deployment, you can use the UDF in Snowflake as follows:
-
-```sql
--- Mask an email address
-SELECT mask_pii('john.doe@example.com', 'email', 'medium');
--- Result: j******@e******.com
-
--- Mask a phone number
-SELECT mask_pii('123-456-7890', 'phone', 'medium');
--- Result: XXX-XXX-7890
-
--- Mask a credit card number
-SELECT mask_pii('4111-1111-1111-1111', 'credit_card', 'medium');
--- Result: 4XXX-XXXX-XXXX-1111
-
--- Mask a Social Security Number
-SELECT mask_pii('123-45-6789', 'ssn', 'medium');
--- Result: XXX-XX-6789
-
--- Create a masked view of customer data
-CREATE OR REPLACE VIEW MASKED_CUSTOMER_DATA AS
-SELECT 
-    CUSTOMER_ID,
-    NAME,
-    mask_pii(EMAIL, 'email', 'medium') AS EMAIL,
-    mask_pii(PHONE, 'phone', 'medium') AS PHONE,
-    mask_pii(CREDIT_CARD, 'credit_card', 'medium') AS CREDIT_CARD,
-    mask_pii(SSN, 'ssn', 'medium') AS SSN
-FROM CUSTOMER_DATA;
-```
+🔹 Step-by-Step Workflow
+🟢 Step 1: Data Ingestion (Raw Data Collection)
+✅ Fetch CO₂ data from NOAA:
+Download daily CO₂ levels from NOAA’s Mauna Loa Observatory.
+Clean and parse the data.
+✅ Store data in AWS S3:
+Organize raw data into folders by year (s3://co2-bucket/YYYY/co2_daily.csv).
+Upload the cleaned data using Boto3 (AWS SDK for Python).
+✅ Load data into Snowflake:
+Use Snowflake’s COPY INTO command to ingest data into RAW_CO2.CO2_DATA.
+Capture incremental changes using Snowflake Streams (CO2_DATA_STREAM).
+🔵 Step 2: Data Harmonization (Transforming & Normalizing)
+✅ Create a harmonized table:
+Define HARMONIZED_CO2.harmonized_co2 schema.
+Convert ppm values to metric tons.
+✅ Merge new data using Snowflake Streams & Tasks:
+Use CO2_HARMONIZED_TASK to merge new CO₂ data.
+Ensure incremental updates via SYSTEM$STREAM_HAS_DATA.
+✅ Store processed data:
+Maintain a structured and cleaned dataset in HARMONIZED_CO2.
+🟠 Step 3: Analytics & Insights
+✅ Compute key CO₂ metrics:
+Use User-Defined Functions (UDFs) to calculate:
+Daily Percent Change (co2_percent_change_udf.py)
+Volatility (co2_volatility_udf.py)
+Trend Forecasting (ML-based prediction models)
+✅ Generate analytics tables:
+Store insights in ANALYTICS_CO2.DAILY_CO2_METRICS.
+Apply unit conversion functions (ppm → metric tons).
+✅ Enable reporting dashboards:
+Provide API access & visualization tools.
+Generate real-time CO₂ monitoring dashboards.
+🟣 Step 4: Automation & Deployment
+✅ Automate Task Execution in Snowflake:
+Schedule daily pipeline execution (2 AM UTC).
+CO2_HARMONIZED_TASK updates harmonized data.
+CO2_ANALYTICS_TASK updates analytics tables.
+✅ Enable CI/CD pipeline using GitHub Actions:
+Automate deployment of Snowpark-based AI models.
+Push updates to forecasting & anomaly detection models.
 
 ## Troubleshooting
 
