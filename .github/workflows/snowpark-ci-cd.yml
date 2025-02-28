@@ -100,8 +100,8 @@ jobs:
           # 1. Deploy CO2 Volatility UDF
           cd udfs_and_spoc/python_udf
           echo "Deploying CO2 Volatility UDF..."
-          snow snowpark build --connection prod
-          snow snowpark deploy --connection prod
+          snow snowpark build --temporary-connection
+          snow snowpark deploy --temporary-connection
           cd ../..
          
           # 2. Deploy Daily CO2 Changes UDF
