@@ -6,3 +6,6 @@ src/data_masker/requirements.snowflake.txt
 .vscode/settings.json
 .env
 venv/
+setup_dev.sql
+setup_prod.sql
+src/data_masker/.vscode/settings.json

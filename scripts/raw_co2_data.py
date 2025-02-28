@@ -81,7 +81,7 @@ def load_raw_table(session, tname=None, s3dir=None, year=None, schema=None):
     comment_text = '''{"origin":"sf_sit-is","name":"co2_data_pipeline","version":{"major":1, "minor":0}}'''
     sql_command = f"""COMMENT ON TABLE {tname} IS '{comment_text}';"""
     session.sql(sql_command).collect()
-    
+
 def load_all_raw_tables(session):
     """Load all raw tables from stage"""
     wh_name = os.getenv("SNOWFLAKE_WAREHOUSE", "CO2_WH")
@@ -115,4 +115,7 @@ if __name__ == "__main__":
             load_all_raw_tables(session)
             validate_raw_tables(session)
         except Exception as e:
-            print(f"Error occurred: {e}")
+            print(f"Error loading data: {str(e)}")
+            print(f"Error type: {type(e)}")
+            import traceback
+            traceback.print_exc()
