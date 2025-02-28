@@ -2,6 +2,7 @@ import pytest
 import snowflake.connector
 import os
 from dotenv import load_dotenv
+
 load_dotenv()
 @pytest.fixture
 def snowflake_connection():
