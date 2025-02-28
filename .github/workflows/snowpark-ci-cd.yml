@@ -110,6 +110,7 @@ jobs:
       - name: Deploy UDFs and Stored Procedures
         run: |
           echo "Deploying UDFs and Stored Procedures..."
+          snow sql -f scripts/setup_${ENVIRONMENT}.sql
           # Deploy using temporary connection
           for dir in udfs_and_spoc/*; do
             if [ -d "$dir" ]; then
