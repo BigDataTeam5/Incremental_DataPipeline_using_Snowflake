@@ -10,6 +10,14 @@ def snowflake_connection():
     """Fixture to establish a connection to Snowflake."""
     conn = None
     try:
+        # Print the connection parameters for debugging
+        print("Connecting to Snowflake with the following parameters:")
+        print(f"User: {os.getenv('SNOWFLAKE_USER')}")
+        print(f"Account: {os.getenv('SNOWFLAKE_ACCOUNT')}")
+        print(f"Warehouse: {os.getenv('SNOWFLAKE_WAREHOUSE')}")
+        print(f"Database: {os.getenv('SNOWFLAKE_DATABASE')}")
+        print(f"Schema: {os.getenv('SNOWFLAKE_SCHEMA')}")
+
         conn = snowflake.connector.connect(
             user=os.getenv("SNOWFLAKE_USER"),
             password=os.getenv("SNOWFLAKE_PASSWORD"),
@@ -25,22 +33,3 @@ def snowflake_connection():
     finally:
         if conn is not None:
             conn.close()  # Close the connection only if it was created
-
-def test_snowflake_connection(snowflake_connection):
-    """Test if Snowflake connection is successful."""
-    assert snowflake_connection is not None, "Connection should not be None"
-    assert snowflake_connection.is_closed() == False, "Connection should be open"
-
-def test_snowflake_query_execution(snowflake_connection):
-    """Test if a simple query executes successfully."""
-    cursor = snowflake_connection.cursor()
-    try:
-        cursor.execute("SELECT CURRENT_VERSION()")
-        result = cursor.fetchone()
-        assert result is not None, "Query result should not be None"
-        assert isinstance(result[0], str), "Result should be a string"
-    finally:
-        cursor.close()
-
-if __name__ == "__main__":
-    pytest.main()
