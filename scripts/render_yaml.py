@@ -6,7 +6,7 @@ import glob
 import json
 
 # Get environment from command line or use default
-env = sys.argv[1] if len(sys.argv) > 1 else "prod"
+env = sys.argv[1] if len(sys.argv) > 1 else "dev"
 
 # Set paths
 base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

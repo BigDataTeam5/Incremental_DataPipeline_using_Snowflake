@@ -12,12 +12,8 @@ import os
 import json
 import sys
 
-# Load environment variables from .env file
+# Load environment variables from .env file (only for AWS credentials, not for env)
 load_dotenv('.env')
-
-# Use the specified environment or default to "dev"
-env = os.getenv("ENV", "dev").lower()
-print(f"Using environment: {env}")
 
 # Ensure the templates directory path is correct
 template_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates", "environment.json")
@@ -27,18 +23,19 @@ try:
     # Load environment configuration from JSON file
     with open(template_path, "r") as json_file:
         env_config = json.load(json_file)
+        env = env_config.get("environment", "").lower()
+        print(f"Using environment from JSON: {env}")
 except FileNotFoundError:
     print(f"ERROR: Configuration file not found at {template_path}")
     print("Please ensure the templates directory exists and contains environment.json")
     sys.exit(1)
-
-# Establish Snowflake connection using the environment-specific details
-try:
-    connection_name = env_config["environment"]
-    print(f"Using Snowflake connection profile: {connection_name}")
 except KeyError:
     print("ERROR: Invalid environment.json format. 'environment' key is missing.")
     sys.exit(1)
+
+# Establish Snowflake connection using the environment-specific details
+connection_name = env
+print(f"Using Snowflake connection profile: {connection_name}")
 
 def create_raw_co2_stream(session):
     """Create a stream on the RAW_CO2.CO2_DATA table"""

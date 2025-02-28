@@ -14,15 +14,7 @@ if not is_running_in_snowflake:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, "..", "..", ".."))
 
-    # Load environment variables from .env file
-    env_file = os.path.join(project_root, '.env')
-    load_dotenv(env_file)
-
-    # Use the specified environment or default to "dev"
-    env = os.getenv("ENV", "dev").lower()
-    print(f"Using environment: {env}")
-
-    # Load environment configuration from JSON file
+    # Load environment exclusively from JSON file
     try:
         env_json_path = os.path.join(project_root, "templates", "environment.json")
         print(f"Looking for environment.json at: {env_json_path}")
@@ -30,14 +22,19 @@ if not is_running_in_snowflake:
         if os.path.exists(env_json_path):
             with open(env_json_path, "r") as json_file:
                 env_config = json.load(json_file)
-            env = env_config.get("environment", env)
+            env = env_config.get("environment", "").lower()
             print(f"Loaded environment from file: {env}")
+        else:
+            # If JSON doesn't exist, use a default value
+            env = ""
+            print(f"Warning: environment.json not found. No environment configured.")
     except Exception as e:
-        print(f"Error loading environment.json: {e}")
-        print("Continuing with default environment")
+        print(f"Error loading configuration: {e}")
+        env = ""
+        print(f"Using empty environment due to error.")
 else:
-    # When running in Snowflake, use the environment from the connection or default to dev
-    env = os.getenv("SNOWFLAKE_ENV", "dev").lower()
+    # When running in Snowflake, use the environment from the connection
+    env = os.getenv("SNOWFLAKE_ENV", "").lower()
     print(f"Running in Snowflake with environment: {env}")
 
 # Use the environment to establish Snowflake connection
@@ -49,10 +46,24 @@ def create_analytics_tables(session: Session) -> str:
     Creates a simplified analytics table in the ANALYTICS_CO2 schema.
     This is a simpler version to avoid Snowflake execution errors.
     """
+    current_warehouse = None
     try:
-        # Scale up the warehouse to LARGE (not XLARGE) for processing
-        session.sql(f"ALTER WAREHOUSE co2_wh_{env} SET WAREHOUSE_SIZE = LARGE WAIT_FOR_COMPLETION = TRUE").collect()
-        print(f"Warehouse co2_wh_{env} scaled up to LARGE")
+        # Get current warehouse from session for dynamic operations
+        current_warehouse = session.get_current_warehouse()
+        if not current_warehouse:
+            print("Warning: No current warehouse available in session.")
+            # Use environment-based warehouse as fallback if current isn't available
+            if env:
+                current_warehouse = f"co2_wh_{env}"
+                print(f"Using fallback warehouse: {current_warehouse}")
+            else:
+                raise ValueError("No warehouse specified and environment variable not set")
+        
+        print(f"Using warehouse: {current_warehouse}")
+        
+        # Scale warehouse up for performance
+        session.sql(f"ALTER WAREHOUSE {current_warehouse} SET WAREHOUSE_SIZE = LARGE WAIT_FOR_COMPLETION = TRUE").collect()
+        print(f"Warehouse {current_warehouse} scaled up to LARGE")
 
         # Create a simpler daily analytics table without UDF calls initially
         print("Creating simplified daily analytics table...")
@@ -109,13 +120,13 @@ def create_analytics_tables(session: Session) -> str:
         print(f"Error creating analytics tables: {str(e)}")
         return f"Error: {str(e)}"
     finally:
-        # Scale warehouse back down to XSMALL after processing
+        # Always scale warehouse back down, even if there's an error
         try:
-            session.sql(f"ALTER WAREHOUSE co2_wh_{env} SET WAREHOUSE_SIZE = XSMALL").collect()
-            print(f"Warehouse co2_wh_{env} scaled down to XSMALL")
+            if current_warehouse:
+                session.sql(f"ALTER WAREHOUSE {current_warehouse} SET WAREHOUSE_SIZE = XSMALL").collect()
+                print(f"Warehouse {current_warehouse} scaled down to XSMALL")
         except Exception as scaling_error:
             print(f"Warning: Failed to scale down warehouse: {str(scaling_error)}")
-
 def main(session: Session) -> str:
     """Main function to be called by the stored procedure."""
     return create_analytics_tables(session)
