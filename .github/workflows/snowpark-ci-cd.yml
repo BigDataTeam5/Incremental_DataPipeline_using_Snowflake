@@ -110,7 +110,7 @@ jobs:
       - name: Deploy UDFs and Stored Procedures
         run: |
           echo "Deploying UDFs and Stored Procedures..."
-          snow sql -f scripts/setup_${ENVIRONMENT}.sql --connection-name $CONN_PROFILE
+          snow sql -f scripts/setup_${ENVIRONMENT}.sql
           echo "Deploying CO2 Volatility UDF..."
           cd udfs_and_spoc/python_udf
           snow snowpark build
