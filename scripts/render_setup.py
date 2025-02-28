@@ -4,7 +4,6 @@ import yaml
 import datetime
 from jinja2 import Environment, FileSystemLoader
 from dotenv import load_dotenv
-load_dotenv('.env')
 
 def render_template(env_name):
     """
