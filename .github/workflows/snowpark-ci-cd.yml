@@ -73,15 +73,22 @@ jobs:
      
       - name: Set environment variables
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "ENVIRONMENT=prod" >> $GITHUB_ENV
-            echo "DATABASE_NAME=CO2_DB_PROD" >> $GITHUB_ENV
-            echo "CONN_PROFILE=prod" >> $GITHUB_ENV
-          else
-            echo "ENVIRONMENT=dev" >> $GITHUB_ENV
-            echo "DATABASE_NAME=CO2_DB_DEV" >> $GITHUB_ENV
-            echo "CONN_PROFILE=dev" >> $GITHUB_ENV
-          fi
+            echo "AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }}" >> $GITHUB_ENV
+            echo "AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }}" >> $GITHUB_ENV
+            if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+              echo "ENVIRONMENT=prod" >> $GITHUB_ENV
+              echo "DATABASE_NAME=CO2_DB_PROD" >> $GITHUB_ENV
+              echo "CONN_PROFILE=prod" >> $GITHUB_ENV
+              echo "SNOWFLAKE_USER=${{ secrets.SNOWFLAKE_USER }}" >> $GITHUB_ENV
+              echo "SNOWFLAKE_PASSWORD=${{ secrets.SNOWFLAKE_PASSWORD }}" >> $GITHUB_ENV
+              # Add other Snowflake-specific environment variables as needed
+            else
+              echo "ENVIRONMENT=dev" >> $GITHUB_ENV
+              echo "DATABASE_NAME=CO2_DB_DEV" >> $GITHUB_ENV
+              echo "CONN_PROFILE=dev" >> $GITHUB_ENV
+              echo "SNOWFLAKE_USER=${{ secrets.SNOWFLAKE_DEV_USER }}" >> $GITHUB_ENV
+              echo "SNOWFLAKE_PASSWORD=${{ secrets.SNOWFLAKE_DEV_PASSWORD }}" >> $GITHUB_ENV
+            fi
      
       - name: Generate configuration and SQL files
         run: |
