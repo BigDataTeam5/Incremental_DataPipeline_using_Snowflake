@@ -6,6 +6,7 @@ load_dotenv()
 @pytest.fixture
 def snowflake_connection():
     """Fixture to establish a connection to Snowflake."""
+    conn = None
     try:
         conn = snowflake.connector.connect(
             user=os.getenv("SNOWFLAKE_USER"),
