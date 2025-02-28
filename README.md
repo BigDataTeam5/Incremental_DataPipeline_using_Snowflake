@@ -137,13 +137,7 @@ The CI/CD pipeline is triggered automatically when you push to the repository:
 - Pushing to the `main` branch deploys to the production environment
 
 
-
-
-CO₂ Emissions Data Pipeline
-Overview
-This repository contains an end-to-end CO₂ Emissions Data Pipeline that automates the ingestion, transformation, analysis, and deployment of CO₂ emissions data. The workflow processes raw CO₂ data from NOAA, stores it in AWS S3, and loads it into Snowflake for further transformation, analytics, and automated deployment.
-
-🔹 Step-by-Step Workflow
+### Step-by-Step Workflow
 🟢 Step 1: Data Ingestion (Raw Data Collection)
 ✅ Fetch CO₂ data from NOAA:
 
