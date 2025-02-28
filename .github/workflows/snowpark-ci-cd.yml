@@ -107,10 +107,17 @@ jobs:
         run: |
           snow --version
 
+      - name: Setup Snowflake
+        run: |
+          echo "Running setup SQL script..."
+          snow sql -f scripts/setup_${ENVIRONMENT}.sql --accountname $SNOWFLAKE_ACCOUNT \
+                    --user $SNOWFLAKE_USER --password $SNOWFLAKE_PASSWORD \
+                    --warehouse $SNOWFLAKE_WAREHOUSE --database $DATABASE_NAME \
+                    --schema $SCHEMA_NAME
+
       - name: Deploy UDFs and Stored Procedures
         run: |
           echo "Deploying UDFs and Stored Procedures..."
-          snow sql -f scripts/setup_${ENVIRONMENT}.sql
           # Deploy using temporary connection
           for dir in udfs_and_spoc/*; do
             if [ -d "$dir" ]; then
