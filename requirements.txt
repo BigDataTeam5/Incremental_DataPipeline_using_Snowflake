@@ -2,3 +2,6 @@ snowflake-snowpark-python[pandas]
 snowflake-cli-labs
 python-dotenv
 pytest
+jinja2
+pyyaml
+boto3

@@ -31,12 +31,25 @@ warehouse_name = config.get("warehouse_name", "CO2_WH")
 # Define template files to process
 template_files = [
     {
-        "template": os.path.join(base_dir, "scripts/daily_weekly_co2_changes/snowflake.yml.template"),
-        "output": os.path.join(base_dir, "scripts/daily_weekly_co2_changes/snowflake.yml")
+        "template": os.path.join(base_dir, "scripts/daily_co2_changes/snowflake.yml.template"),
+        "output": os.path.join(base_dir, "scripts/daily_co2_changes/snowflake.yml")
     },
+    {
+        "template": os.path.join(base_dir, "scripts/weekly_co2_changes/snowflake.yml.template"),
+        "output": os.path.join(base_dir, "scripts/weekly_co2_changes/snowflake.yml")
+    },
+
     {
         "template": os.path.join(base_dir, "scripts/python_udf/snowflake.yml.template"),
         "output": os.path.join(base_dir, "scripts/python_udf/snowflake.yml")
+    },
+    {
+        "template": os.path.join(base_dir, "scripts/co2_harmonized_sp/snowflake.yml.template"),
+        "output": os.path.join(base_dir, "scripts/co2_harmonized_sp/snowflake.yml")
+    },
+    {
+        "template": os.path.join(base_dir, "scripts/co2_analytical_sp/snowflake.yml.template"),
+        "output": os.path.join(base_dir, "scripts/co2_analytical_sp/snowflake.yml")
     }
 ]
 

@@ -52,17 +52,17 @@ if __name__ == "__main__":
     # Load environment variables
     load_dotenv()
     
-    # Set up connection parameters
-    connection_parameters = {
-        "account": os.getenv("SNOWFLAKE_ACCOUNT"),
-        "user": os.getenv("SNOWFLAKE_USER"),
-        "password": os.getenv("SNOWFLAKE_PASSWORD"),
-        "role": os.getenv("SNOWFLAKE_ROLE"),
-        "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE"),
-        "database": os.getenv("SNOWFLAKE_DATABASE")
-    }
+    # Use connection name from environment or default to "dev"
+    connection_name = os.getenv("SNOWFLAKE_CONNECTION", "dev")
+    print(f"Using Snowflake connection profile: {connection_name}")
     
     # Create a Snowpark session
-    with Session.builder.configs(connection_parameters).create() as session:
+    with Session.builder.config("connection_name", connection_name).getOrCreate() as session:
+        print(f"Connected to Snowflake using {connection_name} profile")
+        print(f"Current database: {session.get_current_database()}")
+        print(f"Current schema: {session.get_current_schema()}")
+        print(f"Current warehouse: {session.get_current_warehouse()}")
+        print(f"Current role: {session.get_current_role()}")
+        
         create_raw_co2_stream(session)
         test_raw_co2_stream(session)

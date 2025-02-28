@@ -89,19 +89,5 @@ CREATE OR REPLACE STAGE NOAA_CO2_STAGE
 GRANT READ ON STAGE NOAA_CO2_STAGE TO ROLE {{ config.role_name }};
 GRANT WRITE ON STAGE NOAA_CO2_STAGE TO ROLE {{ config.role_name }};
 
--- Create UDFs
-USE SCHEMA ANALYTICS_CO2;
-
-CREATE OR REPLACE FUNCTION ANALYTICS_CO2.NORMALIZE_CO2_UDF(
-    CO2_PPM NUMBER(35,4),
-    MIN_CO2 NUMBER(35,4),
-    MAX_CO2 NUMBER(35,4)
-)
-RETURNS NUMBER(35,4)
-AS
-$$
-    (CO2_PPM - MIN_CO2) / (MAX_CO2 - MIN_CO2)
-$$;
-
 -- Done!
 SELECT 'Setup complete for {{ env.upper() }} environment. Database: {{ config.database_name }}' AS SETUP_MESSAGE;

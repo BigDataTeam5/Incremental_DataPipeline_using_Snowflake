@@ -89,7 +89,7 @@ def load_all_raw_tables(session):
         for tname in tnames:
             print(f"Loading {tname}")
             # Load data for all years from 1974 to 2019
-            for year in range(1974, 2019):
+            for year in range(1974, 2020):
                 load_raw_table(session, tname=tname, s3dir=s3dir, year=year)
 
     _ = session.sql(f"ALTER WAREHOUSE {wh_name} SET WAREHOUSE_SIZE = XSMALL").collect()
