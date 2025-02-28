@@ -131,6 +131,7 @@ jobs:
       - name: Deploy UDFs and Stored Procedures
         run: |
           # 1. Deploy CO2 Volatility UDF
+          snow connection list
           echo "Setting connection to $CONN_PROFILE"
           snow connection set-default $CONN_PROFILE
           echo "Deploying CO2 Volatility UDF..."
