@@ -116,7 +116,8 @@ jobs:
                     --role $SNOWFLAKE_ROLE \
                     --warehouse $SNOWFLAKE_WAREHOUSE \
                     --database $DATABASE_NAME \
-                    --schema $SCHEMA_NAME
+                    --schema $SCHEMA_NAME \
+                    --temporary-connection
 
       - name: Deploy UDFs and Stored Procedures
         run: |
