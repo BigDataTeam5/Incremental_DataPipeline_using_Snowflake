@@ -2,22 +2,25 @@ import pytest
 import snowflake.connector
 import os
 from dotenv import load_dotenv
+
 load_dotenv()
 @pytest.fixture
 def snowflake_connection():
     """Fixture to establish a connection to Snowflake."""
+    conn = None
     try:
         conn = snowflake.connector.connect(
             user=os.getenv("SNOWFLAKE_USER"),
-            password=os.getenv("SNOWFLAKE_PASSWORD"),
             account=os.getenv("SNOWFLAKE_ACCOUNT"),
+            password=os.getenv("SNOWFLAKE_PASSWORD"),
             warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
             database=os.getenv("SNOWFLAKE_DATABASE"),
             schema=os.getenv("SNOWFLAKE_SCHEMA")
         )
         yield conn
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 def test_snowflake_connection(snowflake_connection):
     """Test if Snowflake connection is successful."""

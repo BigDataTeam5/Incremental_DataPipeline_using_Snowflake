@@ -1,5 +1,6 @@
 snowflake-snowpark-python[pandas]
 snowflake-cli-labs
+snowflake-cli
 python-dotenv
 pytest
 jinja2

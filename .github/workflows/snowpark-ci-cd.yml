@@ -28,6 +28,8 @@ jobs:
           echo "SNOWFLAKE_WAREHOUSE=${{ secrets.SNOWFLAKE_WAREHOUSE }}"
           echo "AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }}"
           echo "AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }}"
+          echo "AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }}"
+          echo "AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }}"
       - name: Run tests
         env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
@@ -43,6 +45,8 @@ jobs:
           pytest testing_snowflake_connection.py
           pytest testing_s3_connection.py
           pytest testing_volatility_co2ppm.py
+          pytest testing_daily_percent_change.py
+          pytest testing_weekly_changes.py
           pytest testing_daily_percent_change.py
           pytest testing_weekly_changes.py
           cd ../..
@@ -95,6 +99,23 @@ jobs:
           echo "Using Connection Profile: $CONN_PROFILE"
           echo "Snowflake User: $SNOWFLAKE_USER"
 
+            echo "AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }}" >> $GITHUB_ENV
+            echo "AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }}" >> $GITHUB_ENV
+            if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+              echo "ENVIRONMENT=prod" >> $GITHUB_ENV
+              echo "DATABASE_NAME=CO2_DB_PROD" >> $GITHUB_ENV
+              echo "CONN_PROFILE=prod" >> $GITHUB_ENV
+              echo "SNOWFLAKE_USER=${{ secrets.SNOWFLAKE_USER }}" >> $GITHUB_ENV
+              echo "SNOWFLAKE_PASSWORD=${{ secrets.SNOWFLAKE_PASSWORD }}" >> $GITHUB_ENV
+              # Add other Snowflake-specific environment variables as needed
+            else
+              echo "ENVIRONMENT=dev" >> $GITHUB_ENV
+              echo "DATABASE_NAME=CO2_DB_DEV" >> $GITHUB_ENV
+              echo "CONN_PROFILE=dev" >> $GITHUB_ENV
+              echo "SNOWFLAKE_USER=${{ secrets.SNOWFLAKE_DEV_USER }}" >> $GITHUB_ENV
+              echo "SNOWFLAKE_PASSWORD=${{ secrets.SNOWFLAKE_DEV_PASSWORD }}" >> $GITHUB_ENV
+            fi
+     
       - name: Generate configuration and SQL files
         run: |
           # Create .env file for AWS credentials used in template rendering
@@ -109,9 +130,14 @@ jobs:
 
       - name: Deploy UDFs and Stored Procedures
         run: |
+          # 1. Deploy CO2 Volatility UDF
           echo "Setting connection to $CONN_PROFILE"
           snow connection set-default $CONN_PROFILE
           echo "Deploying CO2 Volatility UDF..."
+          snow sql -f scripts/setup_${ENVIRONMENT}.sql
+          cd udfs_and_spoc/python_udf
+          snow snowpark build
+          snow snowpark deploy
           snow sql -f scripts/setup_${ENVIRONMENT}.sql
           cd udfs_and_spoc/python_udf
           snow snowpark build
