@@ -1,5 +1,14 @@
-environment: "prod"
-database_name: "CICD_LAB_PROD"
-schema_name: "DATA_SECURITY"
-stage_name: "DEPLOYMENT"
-warehouse_name: "CICD_LAB_WH"
+env: "prod"
+database_name: "CO2_DB_PROD"
+role_name: "CO2_ROLE"
+warehouse_name: "CO2_WH"
+warehouse_size: "MEDIUM"  # Larger size for production
+warehouse_suspend: 600    # Longer auto-suspend time
+s3_url: "s3://noa-co2-datapipeline/noaa-co2-data/"
+use_storage_integration: true  # Use storage integration in production
+storage_integration_name: "S3_CO2_INTEGRATION"
+schemas:
+  - "EXTERNAL"
+  - "RAW_CO2"
+  - "HARMONIZED_CO2"
+  - "ANALYTICS_CO2"
