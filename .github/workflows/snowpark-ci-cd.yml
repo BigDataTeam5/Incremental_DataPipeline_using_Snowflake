@@ -110,9 +110,12 @@ jobs:
       - name: Setup Snowflake
         run: |
           echo "Running setup SQL script..."
-          snow sql -f scripts/setup_${ENVIRONMENT}.sql --accountname $SNOWFLAKE_ACCOUNT \
-                    --user $SNOWFLAKE_USER --password $SNOWFLAKE_PASSWORD \
-                    --warehouse $SNOWFLAKE_WAREHOUSE --database $DATABASE_NAME \
+          snow sql -f scripts/setup_${ENVIRONMENT}.sql \
+                    --accountname $SNOWFLAKE_ACCOUNT \
+                    --user $SNOWFLAKE_USER \
+                    --role $SNOWFLAKE_ROLE \
+                    --warehouse $SNOWFLAKE_WAREHOUSE \
+                    --database $DATABASE_NAME \
                     --schema $SCHEMA_NAME
 
       - name: Deploy UDFs and Stored Procedures
@@ -144,7 +147,7 @@ jobs:
           echo "Orchestrating tasks for $ENVIRONMENT environment..."
           snow sql --accountname $SNOWFLAKE_ACCOUNT \
                     --user $SNOWFLAKE_USER \
-                    --password $SNOWFLAKE_PASSWORD \
+                    --role $SNOWFLAKE_ROLE \
                     --warehouse $SNOWFLAKE_WAREHOUSE \
                     --database $DATABASE_NAME \
                     --schema $SCHEMA_NAME \
