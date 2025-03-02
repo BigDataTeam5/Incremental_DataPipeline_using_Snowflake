@@ -3,7 +3,7 @@ import sys
 import os
 
 # Add the path to the function module
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'scripts', 'python_udf', 'co2_volatility'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'udfs_and_spoc', 'python_udf', 'co2_volatility'))
 from function import calculate_co2_volatility
 
 # Test normal cases
