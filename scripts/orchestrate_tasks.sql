@@ -16,6 +16,7 @@ USE SCHEMA ANALYTICS_CO2;
 -- ----------------------------------------------------------------------------
 -- Step #1: Suspend existing tasks (to allow modifications)
 -- ----------------------------------------------------------------------------
+ALTER TASK IF EXISTS CO2_RAW_DATA_TASK SUSPEND;
 ALTER TASK IF EXISTS CO2_HARMONIZED_TASK SUSPEND;
 
 ALTER TASK IF EXISTS CO2_ANALYTICS_TASK SUSPEND;
@@ -23,6 +24,7 @@ ALTER TASK IF EXISTS CO2_ANALYTICS_TASK SUSPEND;
 -- ----------------------------------------------------------------------------
 -- Step #2: Drop any existing tasks (to ensure a clean setup)
 -- ----------------------------------------------------------------------------
+DROP TASK IF EXISTS CO2_RAW_DATA_TASK;
 DROP TASK IF EXISTS CO2_HARMONIZED_TASK;
 
 DROP TASK IF EXISTS CO2_ANALYTICS_TASK;
@@ -30,10 +32,16 @@ DROP TASK IF EXISTS CO2_ANALYTICS_TASK;
 -- Step #3: Create tasks for manual execution
 -- ----------------------------------------------------------------------------
 -- Task to update the harmonized CO₂ data
-SHOW STREAMS LIKE 'CO2_DATA_STREAM' IN SCHEMA RAW_CO2;
+-- SHOW STREAMS LIKE 'CO2_DATA_STREAM' IN SCHEMA RAW_CO2;
+CREATE OR REPLACE TASK CO2_RAW_DATA_TASK
+WAREHOUSE = CO2_WH
+SCHEDULE = 'USING CRON 0 10 * * * UTC' -- Runs at 10 AM UTC daily
+AS
+CALL CO2_DB_DEV.RAW_CO2.LOADING_CO2_DATA_SP();
+
 CREATE OR REPLACE TASK CO2_HARMONIZED_TASK
 WAREHOUSE = CO2_WH
-SCHEDULE = 'USING CRON 0 2 * * * UTC' -- Runs at 2 AM UTC daily
+AFTER CO2_RAW_DATA_TASK
 WHEN SYSTEM$STREAM_HAS_DATA('RAW_CO2.CO2_DATA_STREAM')
 AS
 CALL CO2_DB_DEV.HARMONIZED_CO2.CO2_HARMONIZED_SP();
@@ -50,11 +58,12 @@ CALL CO2_DB_DEV.ANALYTICS_CO2.CO2_ANALYTICS_SP();
 -- ----------------------------------------------------------------------------
 
 -- Resume both tasks so they are ready for execution
+
 ALTER TASK CO2_ANALYTICS_TASK RESUME;
 ALTER TASK CO2_HARMONIZED_TASK RESUME;
 
 -- Manually execute the harmonized task to test the workflow
-EXECUTE TASK CO2_HARMONIZED_TASK;
+EXECUTE TASK CO2_RAW_DATA_TASK;
 
 SELECT 
 NAME,

@@ -18,8 +18,8 @@ def create_raw_co2_stream(session):
     _ = session.sql('''
         CREATE OR REPLACE STREAM CO2_DATA_STREAM 
         ON TABLE CO2_DATA
-        APPEND_ONLY = true
-        SHOW_INITIAL_ROWS = true
+        APPEND_ONLY = false
+        SHOW_INITIAL_ROWS = false
         COMMENT = 'Stream to capture changes to the CO2 data table'
     ''').collect()
     
@@ -54,34 +54,22 @@ def check_stream_without_consuming(session):
     has_data = session.sql("SELECT SYSTEM$STREAM_HAS_DATA('CO2_DATA_STREAM')").collect()[0][0]
     print(f"Stream has unconsumed data: {has_data}")
     
-    # Count rows without consuming
-    row_count = session.sql("""
-        SELECT COUNT(*) 
-        FROM TABLE(INFORMATION_SCHEMA.STREAM_DATA('RAW_CO2.CO2_DATA_STREAM'))
-    """).collect()[0][0]
-    print(f"Stream contains approximately {row_count} records")
-
-def force_stream_refresh_after_copy(session, table_name="CO2_DATA"):
-    """Force stream refresh by adding a dummy record and then removing it"""
-    session.use_schema('RAW_CO2')
-    
+    # Simply check stream data without counting (this won't advance consumption point)
     try:
-        # Add dummy record
-        session.sql(f"""
-            INSERT INTO {table_name} VALUES
-            (9999, 12, 31, 9999.999, 999.99)
+        # Just check if data exists rather than counting all records
+        stream_check = session.sql("""
+            SELECT 'Data exists' 
+            FROM RAW_CO2.CO2_DATA_STREAM 
+            LIMIT 1
         """).collect()
         
-        # Remove dummy record
-        session.sql(f"""
-            DELETE FROM {table_name} WHERE YEAR = 9999
-        """).collect()
-        
-        print(f"Successfully refreshed stream for {table_name}")
-        return True
+        if stream_check:
+            print("Verified stream contains records")
+        else:
+            print("Stream appears to be empty")
     except Exception as e:
-        print(f"Error refreshing stream: {str(e)}")
-        return False
+        print(f"Error checking stream content: {str(e)}")
+
 
 # For local debugging
 if __name__ == "__main__":
@@ -103,6 +91,5 @@ if __name__ == "__main__":
         create_raw_co2_stream(session)
         test_raw_co2_stream(session)
         # After your COPY operations complete:
-        force_stream_refresh_after_copy(session)
         # Verify stream has data without consuming it
-        check_stream_without_consuming(session) 
+        # check_stream_without_consuming(session) 
