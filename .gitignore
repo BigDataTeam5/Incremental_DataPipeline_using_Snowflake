@@ -1,5 +1,6 @@
 docs/
 **/__pycache__/
+.pytest_cache/
 config.toml
 src/data_masker/data_masker.zip
 src/data_masker/requirements.snowflake.txt
@@ -10,3 +11,5 @@ setup_dev.sql
 setup_prod.sql
 src/data_masker/.vscode/settings.json
 .zip
+orchestrate_tasks_dev.sql
+orchestrate_tasks_prod.sql

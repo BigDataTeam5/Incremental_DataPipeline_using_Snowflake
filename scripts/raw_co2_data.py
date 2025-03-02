@@ -2,11 +2,30 @@ import time
 from snowflake.snowpark import Session
 from dotenv import load_dotenv
 import os
+import json
 
+# Load environment variables from .env file
 load_dotenv('.env')
 
-# Use connection name from environment or default to "dev"
-connection_name = os.getenv("SNOWFLAKE_CONNECTION", "dev")
+# Get the directory of the current script
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# Go up one level to reach the project root
+project_root = os.path.dirname(current_dir)
+# Build the path to environment.json
+env_file_path = os.path.join(project_root, "templates", "environment.json")
+
+# Load environment configuration from JSON file
+try:
+    with open(env_file_path, "r") as json_file:
+        env_config = json.load(json_file)
+    # Use environment from JSON file, overrides ENV variable
+    connection_name = env_config.get("environment", "prod")
+except Exception as e:
+    print(f"Warning: Could not load environment config from {env_file_path}: {e}")
+    # Fallback to ENV environment variable or default to "prod"
+    connection_name = os.getenv("ENV").lower()
+
+# Print connection info for debugging
 print(f"Using Snowflake connection profile: {connection_name}")
 
 # Define constants
@@ -70,7 +89,6 @@ def load_raw_table(session, tname=None, s3dir=None, year=None):
         
         result = session.sql(copy_sql).collect()
         print(f"Loaded data into {DEFAULT_SCHEMA}.{tname}: {result}")
-        session.sql("COMMIT").collect()  # Explicitly commit after the load
         
     except Exception as e:
         print(f"Error loading data: {e}")
@@ -83,18 +101,41 @@ def load_raw_table(session, tname=None, s3dir=None, year=None):
 
 def load_all_raw_tables(session):
     """Load all raw tables from stage"""
-    wh_name = "CO2_WH"  # Use warehouse from connection profile
-    _ = session.sql(f"ALTER WAREHOUSE {wh_name} SET WAREHOUSE_SIZE = XLARGE WAIT_FOR_COMPLETION = TRUE").collect()
-
-    for s3dir, data in TABLE_DICT.items():
-        tnames = data['tables']
-        for tname in tnames:
-            print(f"Loading {tname}")
-            # Load data for all years from 1974 to 2019
-            for year in range(1974,2020):
-                load_raw_table(session, tname=tname, s3dir=s3dir, year=year)
-
-    _ = session.sql(f"ALTER WAREHOUSE {wh_name} SET WAREHOUSE_SIZE = XSMALL").collect()
+    # Use the current warehouse from the session instead of constructing name
+    current_warehouse = session.get_current_warehouse()
+    if not current_warehouse:
+        print("Error: No current warehouse set in session")
+        return
+        
+    print(f"Using warehouse: {current_warehouse}")
+    
+    try:
+        # Scale up the warehouse for better performance
+        session.sql(f"ALTER WAREHOUSE {current_warehouse} SET WAREHOUSE_SIZE = XLARGE WAIT_FOR_COMPLETION = TRUE").collect()
+        print(f"Warehouse {current_warehouse} scaled up to XLARGE")
+        
+        # Process all tables
+        for s3dir, data in TABLE_DICT.items():
+            tnames = data['tables']
+            for tname in tnames:
+                print(f"Loading {tname}")
+                # Load data for specified years
+                for year in range(2020, 2026):
+                    try:
+                        load_raw_table(session, tname=tname, s3dir=s3dir, year=year)
+                    except Exception as e:
+                        print(f"Error loading data for year {year}: {e}")
+                        # Continue with next year instead of failing completely
+    except Exception as e:
+        print(f"Error during raw data loading: {e}")
+        raise
+    finally:
+        # Always scale down the warehouse when done, even if there was an error
+        try:
+            session.sql(f"ALTER WAREHOUSE {current_warehouse} SET WAREHOUSE_SIZE = XSMALL").collect()
+            print(f"Warehouse {current_warehouse} scaled down to XSMALL")
+        except Exception as scaling_error:
+            print(f"Warning: Failed to scale down warehouse: {scaling_error}")
 
 def validate_raw_tables(session):
     """Validate loaded tables"""

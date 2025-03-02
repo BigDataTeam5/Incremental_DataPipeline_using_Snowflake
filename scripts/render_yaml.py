@@ -3,6 +3,7 @@ import sys
 import yaml
 from string import Template
 import glob
+import json
 
 # Get environment from command line or use default
 env = sys.argv[1] if len(sys.argv) > 1 else "dev"
@@ -24,9 +25,9 @@ except yaml.YAMLError as e:
     sys.exit(1)
 
 # Extract values from config
-database_name = config.get("database_name", "CO2_DB_DEV")
-role_name = config.get("role_name", "CO2_ROLE")
-warehouse_name = config.get("warehouse_name", "CO2_WH")
+database_name = config.get("database_name", f"co2_db_{env}")
+role_name = config.get("role_name", f"co2_role_{env}")
+warehouse_name = config.get("warehouse_name", f"co2_wh_{env}")
 
 # Define template files to process
 template_files = [
@@ -38,7 +39,6 @@ template_files = [
         "template": os.path.join(base_dir, "udfs_and_spoc/weekly_co2_changes/snowflake.yml.template"),
         "output": os.path.join(base_dir, "udfs_and_spoc/weekly_co2_changes/snowflake.yml")
     },
-
     {
         "template": os.path.join(base_dir, "udfs_and_spoc/python_udf/snowflake.yml.template"),
         "output": os.path.join(base_dir, "udfs_and_spoc/python_udf/snowflake.yml")

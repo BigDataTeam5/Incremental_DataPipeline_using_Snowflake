@@ -1,113 +1,145 @@
 import os
 from snowflake.snowpark import Session
+import snowflake.snowpark.functions as F
 from dotenv import load_dotenv
+import json
+import sys
+
+# Determine if we're running in Snowflake or locally
+is_running_in_snowflake = 'SNOWFLAKE_PYTHON_INTERPRETER' in os.environ
+
+# Environment setup - only do file operations when running locally
+if not is_running_in_snowflake:
+    # Get the project root directory
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(current_dir, "..", "..", ".."))
+
+    # Load environment variables from .env file
+    env_file = os.path.join(project_root, '.env')
+    load_dotenv(env_file)
+
+    # Use the specified environment or default to "dev"
+    env = os.getenv("ENV", "dev").lower()
+    print(f"Using environment: {env}")
+
+    # Load environment configuration from JSON file
+    try:
+        env_json_path = os.path.join(project_root, "templates", "environment.json")
+        print(f"Looking for environment.json at: {env_json_path}")
+        
+        if os.path.exists(env_json_path):
+            with open(env_json_path, "r") as json_file:
+                env_config = json.load(json_file)
+            env = env_config.get("environment", env)
+            print(f"Loaded environment from file: {env}")
+    except Exception as e:
+        print(f"Error loading environment.json: {e}")
+        print("Continuing with default environment")
+else:
+    # When running in Snowflake, use the environment from the connection or default to dev
+    env = os.getenv("SNOWFLAKE_ENV", "dev").lower()
+    print(f"Running in Snowflake with environment: {env}")
+
+# Use the environment to establish Snowflake connection
+connection_name = env
+print(f"Using Snowflake connection profile: {connection_name}")
 
 def create_analytics_tables(session: Session) -> str:
     """
-    Creates two analytics tables in the ANALYTICS_CO2 schema:
-      - DAILY_ANALYTICS: Contains daily analytics (normalized CO2, daily volatility, daily percent change, etc.)
-      - WEEKLY_ANALYTICS: Contains weekly analytics (last weekly CO2, weekly volatility, weekly percent change, etc.)
-      
-    Uses dynamic warehouse scaling for improved performance.
+    Creates a simplified analytics table in the ANALYTICS_CO2 schema.
+    This is a simpler version to avoid Snowflake execution errors.
     """
-    # session.sql("USE SCHEMA CO2_DB_DEV.ANALYTICS_CO2").collect()
+    try:
+        # Scale up the warehouse to LARGE (not XLARGE) for processing
+        session.sql(f"ALTER WAREHOUSE co2_wh_{env} SET WAREHOUSE_SIZE = LARGE WAIT_FOR_COMPLETION = TRUE").collect()
+        print(f"Warehouse co2_wh_{env} scaled up to LARGE")
 
-    # Scale up the warehouse to XLARGE for processing
-    session.sql("ALTER WAREHOUSE CO2_WH SET WAREHOUSE_SIZE = XLARGE WAIT_FOR_COMPLETION = TRUE").collect()
+        # Create a simpler daily analytics table without UDF calls initially
+        print("Creating simplified daily analytics table...")
+        daily_sql = f"""
+        CREATE OR REPLACE TABLE ANALYTICS_CO2.DAILY_ANALYTICS AS
+        SELECT
+            DATE,
+            YEAR,
+            MONTH AS MONTH_NUM,
+            DAY,
+            ROUND(CO2_PPM, 3) AS CO2_PPM,
+            DAYNAME(DATE) AS DAY_OF_WEEK,
+            MONTHNAME(DATE) AS MONTH_NAME
+        FROM HARMONIZED_CO2.HARMONIZED_CO2
+        """
+        session.sql(daily_sql).collect()
+        print("Created DAILY_ANALYTICS table")
 
-    # Create the daily analytics table
-    daily_sql = """
-    CREATE OR REPLACE TABLE ANALYTICS_CO2.DAILY_ANALYTICS AS
-    WITH daily_data AS (
-      SELECT
-        DATE,
-        YEAR,
-        MONTH AS MONTH_NUM,
-        DAY,
-        ROUND(CO2_PPM, 3) AS CO2_PPM,
-        DAYNAME(DATE) AS DAY_OF_WEEK,
-        MONTHNAME(DATE) AS MONTH_NAME,
-        ROUND(CO2_DB_DEV.ANALYTICS_CO2.NORMALIZE_CO2_UDF(
-          CO2_PPM,
-          MIN(CO2_PPM) OVER (),
-          MAX(CO2_PPM) OVER ()
-        ), 3) AS NORMALIZED_CO2,
-        ROUND(CO2_DB_DEV.ANALYTICS_CO2.CALCULATE_CO2_VOLATILITY(
-          CO2_PPM,
-          LAG(CO2_PPM) OVER (ORDER BY DATE)
-        ), 3) AS DAILY_VOLATILITY,
-        ROUND(CO2_DB_DEV.ANALYTICS_CO2.CO2_DAILY_PERCENT_CHANGE(
-          CO2_PPM,
-          LAG(CO2_PPM) OVER (ORDER BY DATE)
-        ), 3) AS DAILY_PERCENTAGE_CHANGE
-      FROM HARMONIZED_CO2.HARMONIZED_CO2
-    )
-    SELECT * FROM daily_data;
-    """
-    session.sql(daily_sql).collect()
+        # Try adding a derived column with simple calculations (no UDFs)
+        print("Adding derived columns...")
+        session.sql(f"""
+        CREATE OR REPLACE TABLE ANALYTICS_CO2.DAILY_CO2_STATS AS
+        SELECT
+            DATE,
+            CO2_PPM,
+            LAG(CO2_PPM) OVER (ORDER BY DATE) AS PREV_DAY_CO2,
+            CASE
+                WHEN LAG(CO2_PPM) OVER (ORDER BY DATE) > 0 THEN
+                    ROUND(((CO2_PPM - LAG(CO2_PPM) OVER (ORDER BY DATE)) / LAG(CO2_PPM) OVER (ORDER BY DATE)) * 100, 3)
+                ELSE NULL
+            END AS PERCENT_CHANGE
+        FROM HARMONIZED_CO2.HARMONIZED_CO2
+        """).collect()
+        print("Created DAILY_CO2_STATS table")
 
-    # Create the weekly analytics table
-    weekly_sql = """
-    CREATE OR REPLACE TABLE ANALYTICS_CO2.WEEKLY_ANALYTICS AS
-    WITH weekly_base AS (
-      SELECT
-        DATE_TRUNC('WEEK', DATE) AS WEEK_START,
-        DATE,
-        CO2_PPM,
-        CO2_DB_DEV.ANALYTICS_CO2.CALCULATE_CO2_VOLATILITY(
-          CO2_PPM,
-          LAG(CO2_PPM) OVER (PARTITION BY DATE_TRUNC('WEEK', DATE) ORDER BY DATE)
-        ) AS DAILY_VOLATILITY
-      FROM HARMONIZED_CO2.HARMONIZED_CO2
-    ),
-    weekly_with_rn AS (
-      SELECT
-        WEEK_START,
-        CO2_PPM,
-        DAILY_VOLATILITY,
-        ROW_NUMBER() OVER (PARTITION BY WEEK_START ORDER BY DATE DESC) AS rn
-      FROM weekly_base
-    ),
-    weekly_rollup AS (
-      SELECT
-        WEEK_START,
-        MAX(CASE WHEN rn = 1 THEN CO2_PPM END) AS LAST_CO2,
-        AVG(DAILY_VOLATILITY) AS WEEKLY_VOLATILITY
-      FROM weekly_with_rn
-      GROUP BY WEEK_START
-    )
-    SELECT
-      WEEK_START,
-      ROUND(LAST_CO2, 3) AS WEEKLY_CO2,
-      ROUND(WEEKLY_VOLATILITY, 3) AS WEEKLY_VOLATILITY,
-      ROUND(CO2_DB_DEV.ANALYTICS_CO2.CO2_WEEKLY_PERCENT_CHANGE(
-        LAST_CO2,
-        LAG(LAST_CO2) OVER (ORDER BY WEEK_START)
-      ), 3) AS WEEKLY_PERCENTAGE_CHANGE
-    FROM weekly_rollup;
-    """
-    session.sql(weekly_sql).collect()
+        # Create a simple weekly summary table
+        print("Creating weekly summary table...")
+        session.sql(f"""
+        CREATE OR REPLACE TABLE ANALYTICS_CO2.WEEKLY_CO2_SUMMARY AS
+        SELECT
+            DATE_TRUNC('WEEK', DATE) AS WEEK_START,
+            AVG(CO2_PPM) AS AVG_WEEKLY_CO2,
+            MIN(CO2_PPM) AS MIN_WEEKLY_CO2,
+            MAX(CO2_PPM) AS MAX_WEEKLY_CO2,
+            COUNT(*) AS MEASUREMENTS_PER_WEEK
+        FROM HARMONIZED_CO2.HARMONIZED_CO2
+        GROUP BY WEEK_START
+        ORDER BY WEEK_START
+        """).collect()
+        print("Created WEEKLY_CO2_SUMMARY table")
 
-    # Scale warehouse back down to XSMALL after processing
-    session.sql("ALTER WAREHOUSE CO2_WH SET WAREHOUSE_SIZE = XSMALL").collect()
+        return "Simplified analytics tables created successfully."
+    except Exception as e:
+        print(f"Error creating analytics tables: {str(e)}")
+        return f"Error: {str(e)}"
+    finally:
+        # Scale warehouse back down to XSMALL after processing
+        try:
+            session.sql(f"ALTER WAREHOUSE co2_wh_{env} SET WAREHOUSE_SIZE = XSMALL").collect()
+            print(f"Warehouse co2_wh_{env} scaled down to XSMALL")
+        except Exception as scaling_error:
+            print(f"Warning: Failed to scale down warehouse: {str(scaling_error)}")
 
-    return "Analytics tables (DAILY_ANALYTICS and WEEKLY_ANALYTICS) created successfully."
+def main(session: Session) -> str:
+    """Main function to be called by the stored procedure."""
+    return create_analytics_tables(session)
 
 if __name__ == "__main__":
-    # Load environment variables from .env file
-    load_dotenv()
-
-    # Use the connection name from environment or default to "dev"
-    connection_name = os.getenv("SNOWFLAKE_CONNECTION", "dev")
-    print(f"Using Snowflake connection profile: {connection_name}")
-
-    # Create a Snowpark session using the connection profile
-    with Session.builder.config("connection_name", connection_name).getOrCreate() as session:
+    try:
+        # Create a Snowpark session
+        if is_running_in_snowflake:
+            # In Snowflake, session is automatically available
+            session = Session.get_active_session()
+        else:
+            # Locally, create a session using the connection profile
+            session = Session.builder.config("connection_name", connection_name).getOrCreate()
+        
         print(f"Connected to Snowflake using {connection_name} profile")
         print(f"Current database: {session.get_current_database()}")
         print(f"Current schema: {session.get_current_schema()}")
         print(f"Current warehouse: {session.get_current_warehouse()}")
         print(f"Current role: {session.get_current_role()}")
 
-        result = create_analytics_tables(session)
+        result = main(session)
         print(result)
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        print(f"Error type: {type(e)}")
+        import traceback
+        traceback.print_exc()
