@@ -55,9 +55,9 @@ CALL {{ config.database_name }}.ANALYTICS_CO2.CO2_ANALYTICS_SP();
 -- ----------------------------------------------------------------------------
 -- Step #4: Resume all tasks so they are ready for execution
 -- ----------------------------------------------------------------------------
-ALTER TASK CO2_RAW_DATA_TASK RESUME;
-ALTER TASK CO2_HARMONIZED_TASK RESUME;
 ALTER TASK CO2_ANALYTICS_TASK RESUME;
+ALTER TASK CO2_HARMONIZED_TASK RESUME;
+ALTER TASK CO2_RAW_DATA_TASK RESUME;
 
 -- ----------------------------------------------------------------------------
 -- Step #5: Optionally execute the task chain manually for immediate testing

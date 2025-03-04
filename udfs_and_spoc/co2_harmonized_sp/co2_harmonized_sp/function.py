@@ -14,15 +14,7 @@ if not is_running_in_snowflake:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, "..", "..", ".."))
 
-    # Load environment variables from .env file
-    env_file = os.path.join(project_root, '.env')
-    load_dotenv(env_file)
-
-    # Use the specified environment or default to "dev"
-    env = os.getenv("ENV", "dev").lower()
-    print(f"Using environment: {env}")
-
-    # Load environment configuration from JSON file
+    # Load environment exclusively from JSON file
     try:
         env_json_path = os.path.join(project_root, "templates", "environment.json")
         print(f"Looking for environment.json at: {env_json_path}")
@@ -30,14 +22,19 @@ if not is_running_in_snowflake:
         if os.path.exists(env_json_path):
             with open(env_json_path, "r") as json_file:
                 env_config = json.load(json_file)
-            env = env_config.get("environment", env)
+            env = env_config.get("environment", "").lower()
             print(f"Loaded environment from file: {env}")
+        else:
+            # If JSON doesn't exist, use a default value
+            env = ""
+            print(f"Warning: environment.json not found. No environment configured.")
     except Exception as e:
-        print(f"Error loading environment.json: {e}")
-        print("Continuing with default environment")
+        print(f"Error loading configuration: {e}")
+        env = ""
+        print(f"Using empty environment due to error.")
 else:
-    # When running in Snowflake, use the environment from the connection or default to dev
-    env = os.getenv("SNOWFLAKE_ENV", "dev").lower()
+    # When running in Snowflake, use the environment from the connection
+    env = os.getenv("SNOWFLAKE_ENV", "").lower()
     print(f"Running in Snowflake with environment: {env}")
 
 # Use the environment to establish Snowflake connection
@@ -79,9 +76,32 @@ def merge_raw_into_harmonized(session: Session) -> bool:
     This function scales the warehouse dynamically, computes a DATE column from YEAR, MONTH, and DAY,
     and adds the current timestamp to META_UPDATED_AT during the merge.
     """
+    current_warehouse = None
     try:
+        # Get current warehouse from session for dynamic operations
+        current_warehouse = session.get_current_warehouse()
+        if not current_warehouse:
+            print("Warning: No current warehouse available in session.")
+            # Use environment-based warehouse as fallback if current isn't available
+            if env:
+                current_warehouse = f"co2_wh_{env}"
+                print(f"Using fallback warehouse: {current_warehouse}")
+            else:
+                raise ValueError("No warehouse specified and environment variable not set")
+        
+        print(f"Using warehouse: {current_warehouse}")
+        
         # Scale warehouse up for performance
-        session.sql(f"ALTER WAREHOUSE co2_wh_{env} SET WAREHOUSE_SIZE = XLARGE WAIT_FOR_COMPLETION = TRUE").collect()
+        session.sql(f"ALTER WAREHOUSE {current_warehouse} SET WAREHOUSE_SIZE = XLARGE WAIT_FOR_COMPLETION = TRUE").collect()
+        print(f"Warehouse {current_warehouse} scaled up to XLARGE")
+
+        # Check stream data availability
+        stream_count = session.sql("SELECT COUNT(*) FROM RAW_CO2.CO2_DATA_STREAM").collect()[0][0]
+        print(f"Records in stream: {stream_count}")
+        
+        if stream_count == 0:
+            print("Stream is empty - nothing to process")
+            return True
 
         # Load the source stream and compute the DATE column
         source_df = session.table("RAW_CO2.CO2_DATA_STREAM") \
@@ -116,25 +136,36 @@ def merge_raw_into_harmonized(session: Session) -> bool:
         return True
     except Exception as e:
         print("Error during merge operation:", e)
+        import traceback
+        traceback.print_exc()
         return False
     finally:
         # Always scale warehouse back down, even if there's an error
         try:
-            session.sql(f"ALTER WAREHOUSE co2_wh_{env} SET WAREHOUSE_SIZE = XSMALL").collect()
-            print("Warehouse scaled back down to XSMALL")
+            if current_warehouse:
+                session.sql(f"ALTER WAREHOUSE {current_warehouse} SET WAREHOUSE_SIZE = XSMALL").collect()
+                print(f"Warehouse {current_warehouse} scaled down to XSMALL")
         except Exception as scaling_error:
             print(f"Warning: Failed to scale down warehouse: {scaling_error}")
 
 def main(session: Session) -> str:
     """Main function for the stored procedure: ensures the target table exists, then merges new data."""
-    if not table_exists(session, schema='HARMONIZED_CO2', name='harmonized_co2'):
-        create_harmonized_table(session)
+    try:
+        print(f"Session info: DB={session.get_current_database()}, SCHEMA={session.get_current_schema()}, WAREHOUSE={session.get_current_warehouse()}, ROLE={session.get_current_role()}")
+        
+        if not table_exists(session, schema='HARMONIZED_CO2', name='harmonized_co2'):
+            create_harmonized_table(session)
 
-    success = merge_raw_into_harmonized(session)
-    if success:
-        return "CO2_HARMONIZED_SP: Raw → Harmonized merge complete!"
-    else:
-        return "CO2_HARMONIZED_SP: Error during merge operation"
+        success = merge_raw_into_harmonized(session)
+        if success:
+            return "CO2_HARMONIZED_SP: Raw → Harmonized merge complete!"
+        else:
+            return "CO2_HARMONIZED_SP: Error during merge operation"
+    except Exception as e:
+        import traceback
+        tb_str = traceback.format_exc()
+        print(f"Error in main: {str(e)}\n{tb_str}")
+        return f"CO2_HARMONIZED_SP: Error in main function: {str(e)}"
 
 if __name__ == "__main__":
     try:

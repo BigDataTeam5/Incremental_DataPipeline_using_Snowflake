@@ -125,7 +125,7 @@ def load_all_raw_tables(session):
             for tname in tnames:
                 print(f"Loading {tname}")
                 # Load data for specified years
-                for year in range(1974, 2020):
+                for year in range(2020, 2026):
                     try:
                         load_raw_table(session, tname=tname, s3dir=s3dir, year=year)
                     except Exception as e:
