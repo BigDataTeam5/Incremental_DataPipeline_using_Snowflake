@@ -24,6 +24,7 @@ jobs:
       - name: Run tests
         run: |
           pytest tests/testing_co2_analytical_sp.py
+          pytest
           # Add more tests as they become available
 
   deploy:
