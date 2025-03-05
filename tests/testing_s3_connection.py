@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 load_dotenv('.env')
 
 # Constants
-BUCKET_NAME = "noa-co2-datapipeline"
+BUCKET_NAME = "co2emissionsdata"
 BASE_PREFIX = "noaa-co2-data/"
 EXPECTED_YEARS = range(1974, 2020)
 FILE_NAME = "co2_daily_mlo.csv"
