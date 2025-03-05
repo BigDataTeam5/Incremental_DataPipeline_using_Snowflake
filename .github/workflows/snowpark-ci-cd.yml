@@ -1,12 +1,12 @@
 name: CO2 Data Pipeline CI/CD
-
+ 
 on:
   push:
     branches: [main, dev]
   pull_request:
     branches: [main]
   workflow_dispatch:
-
+ 
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -19,13 +19,26 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
           pip install -r requirements.txt
+      - name: Debug Environment Variables
+        run: |
+          echo "SNOWFLAKE_ACCOUNT=${{ secrets.SNOWFLAKE_ACCOUNT }}"
+          echo "SNOWFLAKE_USER=${{ secrets.SNOWFLAKE_USER }}"
+          echo "SNOWFLAKE_PASSWORD=${{ secrets.SNOWFLAKE_PASSWORD }}"
+          echo "SNOWFLAKE_WAREHOUSE=${{ secrets.SNOWFLAKE_WAREHOUSE }}"
       - name: Run tests
         run: |
-          pytest tests/testing_co2_analytical_sp.py
-          # Add more tests as they become available
-
+          cd tests
+          pytest testing_s3_connection.py
+          pytest testing_snowflake_connection.py
+          pytest testing_volatility_co2ppm.py
+          pytest testing_daily_co2_changes.py
+          pytest testing_weekly_co2_changes.py
+          pytest testing_loading_co2_data_sp.py
+          pytest testing_co2_harmonized_sp.py
+          pytest testing_co2_analytical_sp.py
+          cd ../..
+ 
   deploy:
     needs: test
     if: success() && (github.event_name != 'pull_request')
@@ -38,7 +51,7 @@ jobs:
       SNOWFLAKE_WAREHOUSE: CO2_WH
       AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
       AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
-    
+   
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python
@@ -48,85 +61,81 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install snowflake-cli-labs
-          pip install pyyaml jinja2 python-dotenv
-      
+          pip install -r requirements.txt
+     
       - name: Set environment variables
         run: |
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "ENVIRONMENT=prod" >> $GITHUB_ENV
             echo "DATABASE_NAME=CO2_DB_PROD" >> $GITHUB_ENV
+            echo "CONN_PROFILE=prod" >> $GITHUB_ENV
           else
             echo "ENVIRONMENT=dev" >> $GITHUB_ENV
             echo "DATABASE_NAME=CO2_DB_DEV" >> $GITHUB_ENV
+            echo "CONN_PROFILE=dev" >> $GITHUB_ENV
           fi
-      
-      - name: Generate configuration files
+     
+      - name: Generate configuration and SQL files
         run: |
           # Create .env file for AWS credentials used in template rendering
           echo "AWS_ACCESS_KEY=$AWS_ACCESS_KEY" > .env
           echo "AWS_SECRET_KEY=$AWS_SECRET_KEY" >> .env
-          
+         
           # Run the script to generate YAML configs from templates
           python scripts/render_yaml.py $ENVIRONMENT
-      
+         
+          # Run script to generate setup and orchestration SQL files
+          python scripts/render_setup.py $ENVIRONMENT
+     
       - name: Deploy UDFs and Stored Procedures
         run: |
           # 1. Deploy CO2 Volatility UDF
           cd udfs_and_spoc/python_udf
           echo "Deploying CO2 Volatility UDF..."
-          snow snowpark build --temporary-connection
-          snow snowpark deploy --replace --temporary-connection
+          snow snowpark build --connection-name $CONN_PROFILE
+          snow snowpark deploy --replace --connection-name $CONN_PROFILE
           cd ../..
-          
+         
           # 2. Deploy Daily CO2 Changes UDF
           cd udfs_and_spoc/daily_co2_changes
           echo "Deploying Daily CO2 Changes UDF..."
-          snow snowpark build --temporary-connection
-          snow snowpark deploy --replace --temporary-connection
+          snow snowpark build --connection-name $CONN_PROFILE
+          snow snowpark deploy --replace --connection-name $CONN_PROFILE
           cd ../..
-          
+         
           # 3. Deploy Weekly CO2 Changes UDF
           cd udfs_and_spoc/weekly_co2_changes
           echo "Deploying Weekly CO2 Changes UDF..."
-          snow snowpark build --temporary-connection
-          snow snowpark deploy --replace --temporary-connection
+          snow snowpark build --connection-name $CONN_PROFILE
+          snow snowpark deploy --replace --connection-name $CONN_PROFILE
           cd ../..
-          
+         
           # 4. Deploy CO2 Loading SP
           cd udfs_and_spoc/loading_co2_data_sp
           echo "Deploying CO2 Loading Stored Procedure..."
-          snow snowpark build --temporary-connection
-          snow snowpark deploy --replace --temporary-connection
+          snow snowpark build --connection-name $CONN_PROFILE
+          snow snowpark deploy --replace --connection-name $CONN_PROFILE
           cd ../..
-          
+         
           # 5. Deploy CO2 Harmonized SP
           cd udfs_and_spoc/co2_harmonized_sp
           echo "Deploying CO2 Harmonized Stored Procedure..."
-          snow snowpark build --temporary-connection
-          snow snowpark deploy --replace --temporary-connection
+          snow snowpark build --connection-name $CONN_PROFILE
+          snow snowpark deploy --replace --connection-name $CONN_PROFILE
           cd ../..
-          
+         
           # 6. Deploy CO2 Analytics SP
           cd udfs_and_spoc/co2_analytical_sp
           echo "Deploying CO2 Analytics Stored Procedure..."
-          snow snowpark build --temporary-connection
-          snow snowpark deploy --replace --temporary-connection
+          snow snowpark build --connection-name $CONN_PROFILE
+          snow snowpark deploy --replace --connection-name $CONN_PROFILE
           cd ../..
-      
-      - name: Execute Tasks if on Main Branch
-        if: ${{ github.ref == 'refs/heads/main' }}
-        run: |
-          # Create a temporary SQL file to execute
-          cat > execute_tasks.sql << EOF
-          USE ROLE CO2_ROLE;
-          USE WAREHOUSE CO2_WH;
-          USE DATABASE $DATABASE_NAME;
-          USE SCHEMA RAW_CO2;
-          
-          -- Execute the task to kickstart the pipeline
-          EXECUTE TASK CO2_RAW_DATA_TASK;
-          EOF
-          
-          # Execute the SQL using snowsql
-          snow sql -f execute_tasks.sql --connection-name default
+     
+      - name: Orchestrate Tasks
+        run: |        
+          # orchestrate the tasks
+          echo "Orchestrating tasks for $ENVIRONMENT environment..."
+          snow sql -f scripts/orchestrate_tasks_${ENVIRONMENT}.sql --connection-name $CONN_PROFILE
+         
+          # Log task execution status
+          echo "Deployment complete. Tasks successfully orchestrated."
