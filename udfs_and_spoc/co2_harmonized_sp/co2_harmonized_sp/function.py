@@ -10,7 +10,7 @@ is_running_in_snowflake = 'SNOWFLAKE_PYTHON_INTERPRETER' in os.environ
 
 # Environment setup - only do file operations when running locally
 if not is_running_in_snowflake:
-    # Get the project root directory (assuming the function.py is in udfs_and_spoc/co2_harmonized_sp/co2_harmonized_sp/)
+    # Get the project root directory
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, "..", "..", ".."))
 

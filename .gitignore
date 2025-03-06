@@ -13,3 +13,5 @@ src/data_masker/.vscode/settings.json
 .zip
 orchestrate_tasks_dev.sql
 orchestrate_tasks_prod.sql
+environment.json
+lambda_function.zip
