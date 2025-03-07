@@ -151,12 +151,15 @@ jobs:
         run: |
           mkdir -p ~/.snowflake
           
+          # Debug the Snowflake account format
+          echo "Using Snowflake account: ${SNOWFLAKE_ACCOUNT}"
+          
           # Create connection profile for the environment with authenticator
           cat > ~/.snowflake/connections.toml << EOF
           [dev]
-          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
-          user = "${{ secrets.SNOWFLAKE_USER }}"
-          password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
+          account = "$SNOWFLAKE_ACCOUNT"
+          user = "$SNOWFLAKE_USER"
+          password = "$SNOWFLAKE_PASSWORD"
           authenticator = "snowflake"
           warehouse = "CO2_WH_DEV"
           role = "CO2_ROLE_DEV"
@@ -164,9 +167,9 @@ jobs:
           schema = "RAW_CO2"
           
           [prod]
-          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
-          user = "${{ secrets.SNOWFLAKE_USER }}"
-          password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
+          account = "$SNOWFLAKE_ACCOUNT"
+          user = "$SNOWFLAKE_USER"
+          password = "$SNOWFLAKE_PASSWORD"
           authenticator = "snowflake"
           warehouse = "CO2_WH_PROD"
           role = "CO2_ROLE_PROD"
@@ -175,6 +178,29 @@ jobs:
           EOF
           
           chmod 600 ~/.snowflake/connections.toml
+          
+          # Verify the connection file was created properly (without showing passwords)
+          echo "Connection file created with profiles:"
+          grep -v password ~/.snowflake/connections.toml
+          
+          # Test Snowflake connection 
+          pip install snowflake-connector-python
+          python -c "
+          import snowflake.connector
+          try:
+              conn = snowflake.connector.connect(
+                  user='$SNOWFLAKE_USER',
+                  password='$SNOWFLAKE_PASSWORD',
+                  account='$SNOWFLAKE_ACCOUNT',
+                  warehouse='CO2_WH_DEV',
+                  database='CO2_DB_DEV'
+              )
+              print('Connection successful!')
+              conn.close()
+          except Exception as e:
+              print(f'Connection test failed: {e}')
+              # Don't exit with error yet to allow workflow to continue
+          "
           
       - name: Generate configuration and SQL files
         run: |
@@ -203,6 +229,14 @@ jobs:
           
       - name: Deploy UDFs and Stored Procedures
         run: |
+          # First verify that environment variables are set
+          echo "Checking environment variables:"
+          echo "CONN_PROFILE: $CONN_PROFILE"
+          echo "SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT:0:5}..."
+          echo "SNOWFLAKE_USER: $SNOWFLAKE_USER"
+          echo "ENVIRONMENT: $ENVIRONMENT"
+          echo "DATABASE_NAME: $DATABASE_NAME"
+          
           deploy_component() {
             local component_path=$1
             local component_name=$2
@@ -210,8 +244,8 @@ jobs:
             
             echo "⏳ Deploying $component_name..."
             
-            # Use our Python deployment script
-            python scripts/snowflake_deployer.py deploy --profile $CONN_PROFILE --path "$component_path" --name "$component_name" --type "$component_type"
+            # Use our Python deployment script with additional logging
+            PYTHONPATH=$PYTHONPATH:$(pwd) python -u scripts/snowflake_deployer.py deploy --profile $CONN_PROFILE --path "$component_path" --name "$component_name" --type "$component_type"
             
             if [ $? -eq 0 ]; then
               echo "✅ Successfully deployed $component_name"
