@@ -109,7 +109,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install snowflake-connector-python pandas
-      
+          
       - name: Set environment variables based on branch
         run: |
           # Set AWS credentials
@@ -153,7 +153,7 @@ jobs:
           
           # Create connection profile for the environment with authenticator
           cat > ~/.snowflake/connections.toml << EOF
-          [connections.dev]
+          [dev]
           account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
           user = "${{ secrets.SNOWFLAKE_USER }}"
           password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
@@ -163,7 +163,7 @@ jobs:
           database = "CO2_DB_DEV"
           schema = "RAW_CO2"
           
-          [connections.prod]
+          [prod]
           account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
           user = "${{ secrets.SNOWFLAKE_USER }}"
           password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
@@ -200,7 +200,7 @@ jobs:
           # Render YAML and SQL setup files
           python scripts/render_yaml.py $ENVIRONMENT
           python scripts/render_setup.py $ENVIRONMENT
-      
+          
       - name: Deploy UDFs and Stored Procedures
         run: |
           deploy_component() {
