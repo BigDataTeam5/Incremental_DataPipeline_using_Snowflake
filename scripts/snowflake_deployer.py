@@ -32,14 +32,28 @@ def get_connection_config(profile_name):
         with open(config_path, 'r') as f:
             config = toml.load(f)
         
-        # Handle different prefixes based on profile name
-        conn_name = f"connections.{profile_name}" if profile_name in ["dev", "prod"] else profile_name
+        # Log available profiles to help with debugging
+        logger.info(f"Available profiles in connections.toml: {list(config.keys())}")
         
-        if conn_name in config:
-            return config[conn_name]
-        else:
-            logger.error(f"Profile '{profile_name}' not found in config file")
-            return None
+        # Try multiple possible variations of the profile name
+        possible_names = [
+            profile_name,                  # Standard name: [dev] or [prod]
+            f"connections.{profile_name}",  # With prefix: [connections.dev] or [connections.prod]
+        ]
+        
+        # Also try without prefix if it has one
+        if profile_name.startswith("connections."):
+            possible_names.append(profile_name[11:])
+        
+        # Try each possible profile name
+        for name in possible_names:
+            if name in config:
+                logger.info(f"Found profile '{name}' in config file")
+                return config[name]
+        
+        # If we get here, no profile match was found
+        logger.error(f"Profile '{profile_name}' not found in config file. Available profiles: {list(config.keys())}")
+        return None
     
     except Exception as e:
         logger.error(f"Error reading connection config: {str(e)}")
