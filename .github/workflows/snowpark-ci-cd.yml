@@ -1,10 +1,6 @@
-name: CO2 Data Pipeline CI/CD
+name: Test Secrets Deployment
 
 on:
-  push:
-    branches: [main, dev]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -16,271 +12,31 @@ jobs:
       SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
       AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
       AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          
-      - name: Set environment variables based on branch
-        run: |
-          # Determine environment based on branch
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "ENVIRONMENT=prod" >> $GITHUB_ENV
-            echo "DATABASE_NAME=CO2_DB_PROD" >> $GITHUB_ENV
-            echo "SCHEMA_NAME=RAW_CO2" >> $GITHUB_ENV
-            echo "SNOWFLAKE_WAREHOUSE=CO2_WH_PROD" >> $GITHUB_ENV
-            echo "SNOWFLAKE_ROLE=CO2_ROLE_PROD" >> $GITHUB_ENV
-          else
-            echo "ENVIRONMENT=dev" >> $GITHUB_ENV
-            echo "DATABASE_NAME=CO2_DB_DEV" >> $GITHUB_ENV
-            echo "SCHEMA_NAME=RAW_CO2" >> $GITHUB_ENV
-            echo "SNOWFLAKE_WAREHOUSE=CO2_WH_DEV" >> $GITHUB_ENV
-            echo "SNOWFLAKE_ROLE=CO2_ROLE_DEV" >> $GITHUB_ENV
-          fi
-          
-          echo "Testing with $ENVIRONMENT environment"
-          
-      - name: Setup Snowflake connection profiles for testing
-        run: |
-          mkdir -p ~/.snowflake
-          
-          # Create connection profile for testing with authenticator
-          cat > ~/.snowflake/connections.toml << EOF
-          [default]
-          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
-          user = "${{ secrets.SNOWFLAKE_USER }}"
-          password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
-          authenticator = "snowflake"
-          warehouse = "$SNOWFLAKE_WAREHOUSE"
-          database = "$DATABASE_NAME"
-          schema = "$SCHEMA_NAME"
-          role = "$SNOWFLAKE_ROLE"
-          
-          [dev]
-          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
-          user = "${{ secrets.SNOWFLAKE_USER }}"
-          password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
-          authenticator = "snowflake"
-          warehouse = "CO2_WH_DEV"
-          role = "CO2_ROLE_DEV"
-          database = "CO2_DB_DEV"
-          schema = "RAW_CO2"
-          
-          [prod]
-          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
-          user = "${{ secrets.SNOWFLAKE_USER }}"
-          password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
-          authenticator = "snowflake"
-          warehouse = "CO2_WH_PROD"
-          role = "CO2_ROLE_PROD"
-          database = "CO2_DB_PROD"
-          schema = "RAW_CO2"
-          EOF
-          
-          chmod 600 ~/.snowflake/connections.toml
-          
-      - name: Run tests
-        run: |
-          pytest tests/test_snowflake_connection.py
-          pytest tests/test_s3_connection.py
-          pytest tests/test_volatility_co2ppm.py
-          pytest tests/test_daily_co2_changes.py
-          pytest tests/test_weekly_co2_changes.py
-          pytest tests/test_co2_harmonized_sp.py
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-  deploy:
-    needs: test
-    if: success() && (github.event_name != 'pull_request')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      - name: Install dependencies
+      - name: Print Environment Variables (masked)
+        run: |
+          echo "AWS_ACCESS_KEY: ${AWS_ACCESS_KEY:0:5}..."
+          echo "AWS_SECRET_KEY: ${AWS_SECRET_KEY:0:5}..."
+          echo "AWS_REGION: ${AWS_REGION}"
+          echo "SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT:0:5}..."
+          echo "SNOWFLAKE_USER: ${SNOWFLAKE_USER}"
+
+      - name: Test Snowflake Connection
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install snowflake-connector-python pandas
-          
-      - name: Set environment variables based on branch
-        run: |
-          # Set AWS credentials
-          echo "AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }}" >> $GITHUB_ENV
-          echo "AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }}" >> $GITHUB_ENV
-          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
-          echo "S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}" >> $GITHUB_ENV
-          echo "S3_OBJECT_NAME=${{ secrets.S3_OBJECT_NAME }}" >> $GITHUB_ENV
-          echo "PARENT_FOLDER=${{ secrets.PARENT_FOLDER }}" >> $GITHUB_ENV
-          
-          # Set Snowflake credentials
-          echo "SNOWFLAKE_ACCOUNT=${{ secrets.SNOWFLAKE_ACCOUNT }}" >> $GITHUB_ENV
-          echo "SNOWFLAKE_USER=${{ secrets.SNOWFLAKE_USER }}" >> $GITHUB_ENV
-          echo "SNOWFLAKE_PASSWORD=${{ secrets.SNOWFLAKE_PASSWORD }}" >> $GITHUB_ENV
-          
-          # Determine environment based on branch
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "ENVIRONMENT=prod" >> $GITHUB_ENV
-            echo "DATABASE_NAME=CO2_DB_PROD" >> $GITHUB_ENV
-            echo "SCHEMA_NAME=RAW_CO2" >> $GITHUB_ENV
-            echo "CONN_PROFILE=prod" >> $GITHUB_ENV
-            echo "SNOWFLAKE_WAREHOUSE=CO2_WH_PROD" >> $GITHUB_ENV
-            echo "SNOWFLAKE_ROLE=CO2_ROLE_PROD" >> $GITHUB_ENV
-          else
-            echo "ENVIRONMENT=dev" >> $GITHUB_ENV
-            echo "DATABASE_NAME=CO2_DB_DEV" >> $GITHUB_ENV
-            echo "SCHEMA_NAME=RAW_CO2" >> $GITHUB_ENV
-            echo "CONN_PROFILE=dev" >> $GITHUB_ENV
-            echo "SNOWFLAKE_WAREHOUSE=CO2_WH_DEV" >> $GITHUB_ENV
-            echo "SNOWFLAKE_ROLE=CO2_ROLE_DEV" >> $GITHUB_ENV
-          fi
-          
-          echo "Deploying to $ENVIRONMENT environment"
-          echo "Using database: $DATABASE_NAME"
-          echo "Using warehouse: $SNOWFLAKE_WAREHOUSE"
-          echo "Using role: $SNOWFLAKE_ROLE"
-      
-      - name: Setup Snowflake connection profiles
-        run: |
-          mkdir -p ~/.snowflake
-          
-          # Debug the Snowflake account format
-          echo "Using Snowflake account: ${SNOWFLAKE_ACCOUNT}"
-          
-          # Create connection profile for the environment with authenticator
-          cat > ~/.snowflake/connections.toml << EOF
-          [dev]
-          account = "$SNOWFLAKE_ACCOUNT"
-          user = "$SNOWFLAKE_USER"
-          password = "$SNOWFLAKE_PASSWORD"
-          authenticator = "snowflake"
-          warehouse = "CO2_WH_DEV"
-          role = "CO2_ROLE_DEV"
-          database = "CO2_DB_DEV"
-          schema = "RAW_CO2"
-          
-          [prod]
-          account = "$SNOWFLAKE_ACCOUNT"
-          user = "$SNOWFLAKE_USER"
-          password = "$SNOWFLAKE_PASSWORD"
-          authenticator = "snowflake"
-          warehouse = "CO2_WH_PROD"
-          role = "CO2_ROLE_PROD"
-          database = "CO2_DB_PROD"
-          schema = "RAW_CO2"
-          EOF
-          
-          chmod 600 ~/.snowflake/connections.toml
-          
-          # Verify the connection file was created properly (without showing passwords)
-          echo "Connection file created with profiles:"
-          grep -v password ~/.snowflake/connections.toml
-          
-          # Test Snowflake connection 
           pip install snowflake-connector-python
-          python -c "
-          import snowflake.connector
-          try:
-              conn = snowflake.connector.connect(
-                  user='$SNOWFLAKE_USER',
-                  password='$SNOWFLAKE_PASSWORD',
-                  account='$SNOWFLAKE_ACCOUNT',
-                  warehouse='CO2_WH_DEV',
-                  database='CO2_DB_DEV'
-              )
-              print('Connection successful!')
-              conn.close()
-          except Exception as e:
-              print(f'Connection test failed: {e}')
-              # Don't exit with error yet to allow workflow to continue
-          "
-          
-      - name: Generate configuration and SQL files
-        run: |
-          # Create .env file for local tools
-          cat > .env << EOF
-          AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }}
-          AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }}
-          AWS_REGION=${{ secrets.AWS_REGION }}
-          S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}
-          S3_OBJECT_NAME=${{ secrets.S3_OBJECT_NAME }}
-          PARENT_FOLDER=${{ secrets.PARENT_FOLDER }}
-          SNOWFLAKE_ENV=$ENVIRONMENT
-          EOF
-          
-          # Create environment.json for any tools that use it
-          mkdir -p templates
-          cat > templates/environment.json << EOF
-          {
-            "environment": "$ENVIRONMENT"
-          }
-          EOF
-          
-          # Render YAML and SQL setup files
-          python scripts/render_yaml.py $ENVIRONMENT
-          python scripts/render_setup.py $ENVIRONMENT
-          
-      - name: Deploy UDFs and Stored Procedures
-        run: |
-          # First verify that environment variables are set
-          echo "Checking environment variables:"
-          echo "CONN_PROFILE: $CONN_PROFILE"
-          echo "SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT:0:5}..."
-          echo "SNOWFLAKE_USER: $SNOWFLAKE_USER"
-          echo "ENVIRONMENT: $ENVIRONMENT"
-          echo "DATABASE_NAME: $DATABASE_NAME"
-          
-          deploy_component() {
-            local component_path=$1
-            local component_name=$2
-            local component_type=$3
-            
-            echo "⏳ Deploying $component_name..."
-            
-            # Use our Python deployment script with additional logging
-            PYTHONPATH=$PYTHONPATH:$(pwd) python -u scripts/snowflake_deployer.py deploy --profile $CONN_PROFILE --path "$component_path" --name "$component_name" --type "$component_type"
-            
-            if [ $? -eq 0 ]; then
-              echo "✅ Successfully deployed $component_name"
-            else
-              echo "❌ Deploy failed for $component_name"
-              exit 1
-            fi
-          }
-          
-          echo "🚀 Starting deployments to $ENVIRONMENT environment..."
-          
-          # Deploy UDFs
-          deploy_component "udfs_and_spoc/python_udf" "CO2_VOLATILITY" "udf"
-          deploy_component "udfs_and_spoc/daily_co2_changes" "DAILY_CO2_CHANGES" "udf"
-          deploy_component "udfs_and_spoc/weekly_co2_changes" "WEEKLY_CO2_CHANGES" "udf"
-          
-          # Deploy stored procedures
-          deploy_component "udfs_and_spoc/loading_co2_data_sp" "LOAD_CO2_DATA" "procedure"
-          deploy_component "udfs_and_spoc/co2_harmonized_sp" "HARMONIZE_CO2_DATA" "procedure"
-          deploy_component "udfs_and_spoc/co2_analytical_sp" "ANALYZE_CO2_DATA" "procedure"
-          
-          echo "🎉 All components deployed successfully!"
-      
-      - name: Orchestrate Tasks
-        run: |
-          echo "⏳ Orchestrating tasks for $ENVIRONMENT environment..."
-          
-          # Use our Python script to execute SQL
-          python scripts/snowflake_deployer.py sql --profile $CONN_PROFILE --file "scripts/orchestrate_tasks_${ENVIRONMENT}.sql"
-          
-          if [ $? -eq 0 ]; then
-            echo "✅ Tasks successfully orchestrated for $ENVIRONMENT environment"
-          else
-            echo "❌ Task orchestration failed for $ENVIRONMENT environment"
-            exit 1
-          fi
-          
-          echo "🏁 Deployment complete!"
+          python -c "import snowflake.connector; 
+try:
+    conn = snowflake.connector.connect(
+        user='${SNOWFLAKE_USER}',
+        password='${SNOWFLAKE_PASSWORD}',
+        account='${SNOWFLAKE_ACCOUNT}'
+    )
+    print('Snowflake connection successful!')
+    conn.close()
+except Exception as e:
+    print('Snowflake connection failed:', e)"
