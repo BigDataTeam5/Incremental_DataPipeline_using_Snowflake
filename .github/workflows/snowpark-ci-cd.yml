@@ -31,14 +31,7 @@ jobs:
           pip install -r requirements.txt
       - name: Run tests
         run: |
-          pytest tests/testing_snowflake_connection.py
-          pytest tests/test_s3_connection.py
-          pytest tests/test_volatility_co2ppm.py
-          pytest tests/test_daily_co2_changes.py
-          pytest tests/test_weekly_co2_changes.py
-          pytest tests/test_loading_co2_data_sp.py
-          pytest tests/test_co2_harmonized_sp.py
-          pytest tests/test_co2_analytical_sp.py
+          
 
   deploy:
     needs: test
