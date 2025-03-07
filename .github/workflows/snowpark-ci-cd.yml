@@ -10,6 +10,15 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+      SNOWFLAKE_WAREHOUSE: CO2_WH
+      AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+      AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
+      DATABASE_NAME: CO2_DB_PROD # Or use a secret if needed
+      SCHEMA_NAME: RAW_CO2       # Or use a secret if needed
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python
@@ -27,6 +36,9 @@ jobs:
           pytest tests/test_volatility_co2ppm.py
           pytest tests/test_daily_co2_changes.py
           pytest tests/test_weekly_co2_changes.py
+          pytest tests/test_loading_co2_data_sp.py
+          pytest tests/test_co2_harmonized_sp.py
+          pytest tests/test_co2_analytical_sp.py
 
   deploy:
     needs: test

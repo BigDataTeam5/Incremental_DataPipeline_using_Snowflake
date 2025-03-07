@@ -5,5 +5,8 @@ pytest
 jinja2
 pyyaml
 boto3
-toml
-requests
+toml==0.10.2
+typer==0.15.2
+exceptiongroup>=1.2.2
+iniconfig==2.0.0
+tomli>=2.2.1
