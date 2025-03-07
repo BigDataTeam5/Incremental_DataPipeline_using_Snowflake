@@ -59,6 +59,44 @@ def get_connection_config(profile_name):
         logger.error(f"Error reading connection config: {str(e)}")
         return None
 
+def create_snowflake_connection(conn_config):
+    """Create a Snowflake connection from configuration."""
+    try:
+        # Check if we're using key pair authentication
+        if 'private_key_path' in conn_config:
+            # Expand the path (e.g., ~ to home directory)
+            key_path = os.path.expanduser(conn_config['private_key_path'])
+            
+            # Read the private key
+            with open(key_path, 'rb') as key_file:
+                private_key = key_file.read()
+                
+            # Connect with private key
+            return snowflake.connector.connect(
+                account=conn_config.get('account'),
+                user=conn_config.get('user'),
+                private_key=private_key,
+                warehouse=conn_config.get('warehouse'),
+                database=conn_config.get('database'),
+                schema=conn_config.get('schema'),
+                role=conn_config.get('role')
+            )
+        else:
+            # Connect with password
+            return snowflake.connector.connect(
+                account=conn_config.get('account'),
+                user=conn_config.get('user'),
+                password=conn_config.get('password'),
+                warehouse=conn_config.get('warehouse'),
+                database=conn_config.get('database'),
+                schema=conn_config.get('schema'),
+                role=conn_config.get('role'),
+                authenticator=conn_config.get('authenticator', 'snowflake')
+            )
+    except Exception as e:
+        logger.error(f"Failed to create Snowflake connection: {str(e)}")
+        raise
+
 def deploy_component(profile_name, component_path, component_name, component_type):
     """Deploy a component to Snowflake."""
     logger.info(f"Deploying component: {component_name} ({component_type})")
@@ -70,17 +108,8 @@ def deploy_component(profile_name, component_path, component_name, component_typ
     
     conn = None
     try:
-        # Connect to Snowflake
-        conn = snowflake.connector.connect(
-            account=conn_config.get('account'),
-            user=conn_config.get('user'),
-            password=conn_config.get('password'),
-            warehouse=conn_config.get('warehouse'),
-            database=conn_config.get('database'),
-            schema=conn_config.get('schema'),
-            role=conn_config.get('role'),
-            authenticator=conn_config.get('authenticator', 'snowflake')
-        )
+        # Connect to Snowflake using the enhanced connection function
+        conn = create_snowflake_connection(conn_config)
         
         cursor = conn.cursor()
         
@@ -170,17 +199,8 @@ def execute_sql_file(profile_name, sql_file):
     
     conn = None
     try:
-        # Connect to Snowflake
-        conn = snowflake.connector.connect(
-            account=conn_config.get('account'),
-            user=conn_config.get('user'),
-            password=conn_config.get('password'),
-            warehouse=conn_config.get('warehouse'),
-            database=conn_config.get('database'),
-            schema=conn_config.get('schema'),
-            role=conn_config.get('role'),
-            authenticator=conn_config.get('authenticator', 'snowflake')
-        )
+        # Connect to Snowflake using the enhanced connection function
+        conn = create_snowflake_connection(conn_config)
         
         # Read SQL file
         with open(sql_file, 'r') as f:

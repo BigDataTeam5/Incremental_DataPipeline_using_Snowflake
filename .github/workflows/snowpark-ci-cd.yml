@@ -149,18 +149,22 @@ jobs:
       
       - name: Setup Snowflake connection profiles
         run: |
-          mkdir -p ~/.snowflake
+          mkdir -p ~/.snowflake/keys
           
           # Debug the Snowflake account format
           echo "Using Snowflake account: ${SNOWFLAKE_ACCOUNT}"
           
-          # Create connection profile for the environment with authenticator
+          # Store private key from GitHub secrets
+          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > ~/.snowflake/keys/rsa_key.p8
+          chmod 600 ~/.snowflake/keys/rsa_key.p8
+          
+          # Create connection profile for the environment with key authentication
           cat > ~/.snowflake/connections.toml << EOF
           [dev]
           account = "$SNOWFLAKE_ACCOUNT"
           user = "$SNOWFLAKE_USER"
-          password = "$SNOWFLAKE_PASSWORD"
-          authenticator = "snowflake"
+          private_key_path = "~/.snowflake/keys/rsa_key.p8"
+          authenticator = "snowflake_jwt"
           warehouse = "CO2_WH_DEV"
           role = "CO2_ROLE_DEV"
           database = "CO2_DB_DEV"
@@ -169,8 +173,8 @@ jobs:
           [prod]
           account = "$SNOWFLAKE_ACCOUNT"
           user = "$SNOWFLAKE_USER"
-          password = "$SNOWFLAKE_PASSWORD"
-          authenticator = "snowflake"
+          private_key_path = "~/.snowflake/keys/rsa_key.p8"
+          authenticator = "snowflake_jwt"
           warehouse = "CO2_WH_PROD"
           role = "CO2_ROLE_PROD"
           database = "CO2_DB_PROD"
@@ -179,19 +183,26 @@ jobs:
           
           chmod 600 ~/.snowflake/connections.toml
           
-          # Verify the connection file was created properly (without showing passwords)
+          # Verify the connection file was created properly (without showing keys)
           echo "Connection file created with profiles:"
-          grep -v password ~/.snowflake/connections.toml
+          grep -v private_key ~/.snowflake/connections.toml
           
-          # Test Snowflake connection 
-          pip install snowflake-connector-python
+          # Test Snowflake connection with key authentication
+          pip install snowflake-connector-python cryptography
           python -c "
           import snowflake.connector
+          import os
+          from cryptography.hazmat.backends import default_backend
+          from cryptography.hazmat.primitives.asymmetric import rsa
+          from cryptography.hazmat.primitives.asymmetric import padding
           try:
+              with open(os.path.expanduser('~/.snowflake/keys/rsa_key.p8'), 'rb') as key:
+                  p_key = key.read()
+              
               conn = snowflake.connector.connect(
                   user='$SNOWFLAKE_USER',
-                  password='$SNOWFLAKE_PASSWORD',
                   account='$SNOWFLAKE_ACCOUNT',
+                  private_key=p_key,
                   warehouse='CO2_WH_DEV',
                   database='CO2_DB_DEV'
               )
@@ -199,7 +210,6 @@ jobs:
               conn.close()
           except Exception as e:
               print(f'Connection test failed: {e}')
-              # Don't exit with error yet to allow workflow to continue
           "
           
       - name: Generate configuration and SQL files
