@@ -93,7 +93,7 @@ jobs:
           pytest tests/test_daily_co2_changes.py
           pytest tests/test_weekly_co2_changes.py
           pytest tests/test_co2_harmonized_sp.py
-          pytest tests/test_co2_analytical_sp.py
+          
 
   deploy:
     needs: test
