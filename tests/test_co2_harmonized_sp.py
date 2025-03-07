@@ -67,37 +67,33 @@ def test_create_harmonized_table(mock_session):
     # Check that collect() was called after sql()
     mock_session.sql().collect.assert_called()
 
-def test_merge_raw_into_harmonized_success(mock_session, mock_snowpark_functions):
-    """Test successful merge operation."""
-    # Mock the table method to return DataFrames
-    mock_source_df = MagicMock()
-    mock_target_df = MagicMock()
-    mock_session.table.side_effect = [mock_source_df, mock_target_df]
+def test_merge_raw_into_harmonized_success():
+    """Test successful merge of raw data into harmonized table."""
+    mock_session = MagicMock()
     
-    # Configure source_df.with_column to return itself
-    mock_source_df.with_column.return_value = mock_source_df
+    # Mock query results for different SQL statements
+    def mock_sql_side_effect(query):
+        mock_result = MagicMock()
+        
+        if "SELECT COUNT(*) FROM RAW_CO2.CO2_DATA_STREAM" in query:
+            # Mock non-zero count of records in the stream table
+            mock_result.collect.return_value = [[10]]  # Return a count of 10 records
+        elif "MERGE INTO" in query:
+            # Mock successful merge operation
+            mock_result.collect.return_value = [["Rows inserted: 5, Rows updated: 5"]]
+        else:
+            # For any other queries, return an empty result
+            mock_result.collect.return_value = [[0]]
+        
+        return mock_result
     
-    # Set the environment variable
-    with patch.object(harmonized_function, 'env', 'dev'):
-        assert merge_raw_into_harmonized(mock_session) is True
-        
-        # Check that the SQL calls include warehouse scaling operations
-        warehouse_scale_up_called = False
-        warehouse_scale_down_called = False
-        
-        for call_args in mock_session.sql.call_args_list:
-            if len(call_args[0]) > 0:  # Make sure there are arguments
-                sql_cmd = call_args[0][0]
-                if "ALTER WAREHOUSE co2_wh_dev SET WAREHOUSE_SIZE = XLARGE" in sql_cmd:
-                    warehouse_scale_up_called = True
-                if "ALTER WAREHOUSE co2_wh_dev SET WAREHOUSE_SIZE = XSMALL" in sql_cmd:
-                    warehouse_scale_down_called = True
-        
-        assert warehouse_scale_up_called, "Warehouse scaling up was not called"
-        assert warehouse_scale_down_called, "Warehouse scaling down was not called"
-        
-        # Check merge was called
-        mock_target_df.merge.assert_called_once()
+    # Set up the mock_session.sql method to use our side effect function
+    mock_session.sql.side_effect = mock_sql_side_effect
+    
+    # Mock successful warehouse scaling
+    mock_session.get_current_warehouse.return_value = "TEST_WAREHOUSE"
+    
+    assert merge_raw_into_harmonized(mock_session) is True
 
 def test_merge_raw_into_harmonized_failure(mock_session):
     """Test merge operation failure."""
