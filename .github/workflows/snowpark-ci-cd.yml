@@ -116,12 +116,16 @@ jobs:
           # Download and install the latest Snowflake CLI
           pip install snowflake-cli-labs
           
-          # Verify installation
-          snowflake --version
+          # Find the actual CLI command name
+          echo "Looking for the snowflake CLI binary..."
+          find /opt/hostedtoolcache/Python -name "snowflake*" -type f -executable
           
-          # List available commands to verify snowpark is available
-          echo "Available snowflake commands:"
-          snowflake --help
+          # List installed command-line entry points 
+          echo "Listing Python entry points:"
+          pip list | grep snow
+          
+          # Show what's in the bin directory
+          ls -la /opt/hostedtoolcache/Python/3.10.16/x64/bin/snow*
       
       - name: Set environment variables based on branch
         run: |
@@ -233,39 +237,55 @@ jobs:
               ls -la
             fi
             
-            # Use the snowflake command (not snow)
-            snowflake snowpark build --connection-name $CONN_PROFILE || { echo "❌ Build failed for $component_name"; exit 1; }
-            snowflake snowpark deploy --replace --connection-name $CONN_PROFILE || { echo "❌ Deploy failed for $component_name"; exit 1; }
+            # Try different command names
+            echo "Attempting to build with snowflake-cli..."
+            if command -v snowflake-cli &> /dev/null; then
+              snowflake-cli snowpark build --connection-name $CONN_PROFILE || { echo "❌ Build failed for $component_name"; exit 1; }
+              snowflake-cli snowpark deploy --replace --connection-name $CONN_PROFILE || { echo "❌ Deploy failed for $component_name"; exit 1; }
+            elif command -v snowcli &> /dev/null; then
+              snowcli snowpark build --connection-name $CONN_PROFILE || { echo "❌ Build failed for $component_name"; exit 1; }
+              snowcli snowpark deploy --replace --connection-name $CONN_PROFILE || { echo "❌ Deploy failed for $component_name"; exit 1; }
+            else
+              echo "Snowflake CLI not found. Installing using alternative method..."
+              pip install "snowflake-cli-labs>=0.2.8"
+              python -m snowflake.cli.snowcli snowpark build --connection-name $CONN_PROFILE || { echo "❌ Build failed for $component_name"; exit 1; }
+              python -m snowflake.cli.snowcli snowpark deploy --replace --connection-name $CONN_PROFILE || { echo "❌ Deploy failed for $component_name"; exit 1; }
+            fi
             
             cd ../..
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          echo "🏁 Deployment complete!"                    fi            exit 1            echo "❌ Task orchestration failed for $ENVIRONMENT environment"          else            echo "✅ Tasks successfully orchestrated for $ENVIRONMENT environment"          if [ $? -eq 0 ]; then                    snowflake sql -f scripts/orchestrate_tasks_${ENVIRONMENT}.sql --connection-name $CONN_PROFILE          # Use snowflake command instead of snow                    echo "⏳ Orchestrating tasks for $ENVIRONMENT environment..."        run: |      - name: Orchestrate Tasks                echo "🎉 All components deployed successfully!"                    deploy_component "udfs_and_spoc/co2_analytical_sp" "CO2 Analytics Stored Procedure"          deploy_component "udfs_and_spoc/co2_harmonized_sp" "CO2 Harmonized Stored Procedure"          deploy_component "udfs_and_spoc/loading_co2_data_sp" "CO2 Loading Stored Procedure"          deploy_component "udfs_and_spoc/weekly_co2_changes" "Weekly CO2 Changes UDF"          deploy_component "udfs_and_spoc/daily_co2_changes" "Daily CO2 Changes UDF"          deploy_component "udfs_and_spoc/python_udf" "CO2 Volatility UDF"          # Deploy all components using the helper function                    echo "🚀 Starting deployments to $ENVIRONMENT environment..."                    }            echo "✅ Successfully deployed $component_name"
+            echo "✅ Successfully deployed $component_name"
+          }
+          
+          echo "🚀 Starting deployments to $ENVIRONMENT environment..."
+          
+          # Deploy all components using the helper function
+          deploy_component "udfs_and_spoc/python_udf" "CO2 Volatility UDF"
+          deploy_component "udfs_and_spoc/daily_co2_changes" "Daily CO2 Changes UDF"
+          deploy_component "udfs_and_spoc/weekly_co2_changes" "Weekly CO2 Changes UDF"
+          deploy_component "udfs_and_spoc/loading_co2_data_sp" "CO2 Loading Stored Procedure"
+          deploy_component "udfs_and_spoc/co2_harmonized_sp" "CO2 Harmonized Stored Procedure"
+          deploy_component "udfs_and_spoc/co2_analytical_sp" "CO2 Analytics Stored Procedure"
+          
+          echo "🎉 All components deployed successfully!"
+      
+      - name: Orchestrate Tasks
+        run: |
+          echo "⏳ Orchestrating tasks for $ENVIRONMENT environment..."
+          
+          # Try different command names for SQL execution
+          if command -v snowflake-cli &> /dev/null; then
+            snowflake-cli sql -f scripts/orchestrate_tasks_${ENVIRONMENT}.sql --connection-name $CONN_PROFILE
+          elif command -v snowcli &> /dev/null; then
+            snowcli sql -f scripts/orchestrate_tasks_${ENVIRONMENT}.sql --connection-name $CONN_PROFILE
+          else
+            python -m snowflake.cli.snowcli sql -f scripts/orchestrate_tasks_${ENVIRONMENT}.sql --connection-name $CONN_PROFILE
+          fi
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Tasks successfully orchestrated for $ENVIRONMENT environment"
+          else
+            echo "❌ Task orchestration failed for $ENVIRONMENT environment"
+            exit 1
+          fi
+          
+          echo "🏁 Deployment complete!"
