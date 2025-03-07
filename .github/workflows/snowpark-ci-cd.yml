@@ -29,6 +29,40 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Setup Snowflake connection profiles for testing
+        run: |
+          mkdir -p ~/.snowflake
+          
+          # Create connection profile for testing
+          cat > ~/.snowflake/connections.toml << EOF
+          [default]
+          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
+          user = "${{ secrets.SNOWFLAKE_USER }}"
+          password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
+          warehouse = "CO2_WH"
+          database = "$DATABASE_NAME"
+          schema = "$SCHEMA_NAME"
+          
+          [dev]
+          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
+          user = "${{ secrets.SNOWFLAKE_USER }}"
+          password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
+          warehouse = "CO2_WH_DEV"
+          role = "CO2_ROLE_DEV"
+          database = "CO2_DB_DEV"
+          schema = "RAW_CO2"
+          
+          [prod]
+          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
+          user = "${{ secrets.SNOWFLAKE_USER }}"
+          password = "${{ secrets.SNOWFLAKE_PASSWORD }}"
+          warehouse = "CO2_WH_PROD"
+          role = "CO2_ROLE_PROD"
+          database = "CO2_DB_PROD"
+          schema = "RAW_CO2"
+          EOF
+          
+          chmod 600 ~/.snowflake/connections.toml
       - name: Run tests
         run: |
           pytest tests/testing_snowflake_connection.py
@@ -97,7 +131,7 @@ jobs:
           mkdir -p ~/.snowflake
           
           # Create connection profile for the environment
-          cat > ~/.snowflake/config.toml << EOF
+          cat > ~/.snowflake/connections.toml << EOF
           [connections.dev]
           account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
           user = "${{ secrets.SNOWFLAKE_USER }}"
@@ -117,7 +151,7 @@ jobs:
           schema = "RAW_CO2"
           EOF
           
-          chmod 600 ~/.snowflake/config.toml
+          chmod 600 ~/.snowflake/connections.toml
       
       - name: Generate configuration and SQL files
         run: |
