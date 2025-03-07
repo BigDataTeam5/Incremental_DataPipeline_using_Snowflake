@@ -32,3 +32,5 @@ def test_calculate_volatility_normal(current, previous, expected):
 def test_calculate_volatility_edge_cases(current, previous, expected):
     result = calculate_co2_volatility(current, previous)
     assert result == expected
+if __name__ == "__main__":
+    pytest.main(args=[__file__])

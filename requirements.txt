@@ -5,3 +5,5 @@ pytest
 jinja2
 pyyaml
 boto3
+toml
+requests

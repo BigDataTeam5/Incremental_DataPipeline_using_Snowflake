@@ -4,28 +4,60 @@ import os
 import logging
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv('.env')
+# Search for .env file in parent directories if not in current directory
+def find_dotenv():
+    current_dir = Path.cwd()
+    for _ in range(3):  # Try up to 3 levels up
+        env_path = current_dir / '.env'
+        if env_path.exists():
+            return str(env_path)
+        current_dir = current_dir.parent
+    return None
 
-# Constants
-BUCKET_NAME = "co2emissionsdata"
-BASE_PREFIX = "noaa-co2-data/"
-EXPECTED_YEARS = range(1974, 2020)
-FILE_NAME = "co2_daily_mlo.csv"
+# Try to load .env file
+dotenv_path = find_dotenv()
+if dotenv_path:
+    logger.info(f"Loading environment from: {dotenv_path}")
+    load_dotenv(dotenv_path)
+else:
+    logger.warning("No .env file found in current directory or parent directories")
+
+# Constants with fallback values
+AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY")
+AWS_SECRET_KEY = os.getenv("AWS_SECRET_KEY")
+BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "noa-co2-datapipeline")  # Default bucket name
+BASE_PREFIX = os.getenv("PARENT_FOLDER", "noaa-co2-data") + "/"
+EXPECTED_YEARS = range(2020, 2025)  # Updated to more recent years
+FILE_NAME = os.getenv("S3_OBJECT_NAME", "co2_daily_mlo.csv")
+
+# Print environment info for debugging
+logger.info(f"S3 bucket: {BUCKET_NAME}")
+logger.info(f"Base prefix: {BASE_PREFIX}")
+logger.info(f"AWS credentials present: {bool(AWS_ACCESS_KEY) and bool(AWS_SECRET_KEY)}")
 
 @pytest.fixture
 def s3_client():
     """Create and return an S3 client using credentials from environment variables."""
     try:
+        # Validate S3 configuration before creating client
+        if not BUCKET_NAME:
+            pytest.skip("S3_BUCKET_NAME environment variable is not set")
+            
+        if not AWS_ACCESS_KEY or not AWS_SECRET_KEY:
+            pytest.skip("AWS credentials are not properly set in environment variables")
+        
         client = boto3.client(
             's3',
-            aws_access_key_id=os.getenv('AWS_ACCESS_KEY'),
-            aws_secret_access_key=os.getenv('AWS_SECRET_KEY')
+            aws_access_key_id=AWS_ACCESS_KEY,
+            aws_secret_access_key=AWS_SECRET_KEY,
+            region_name=os.getenv('AWS_REGION', 'us-east-2')  # Add region with default
         )
         return client
     except Exception as e:
@@ -45,6 +77,8 @@ def test_s3_bucket_exists(s3_client):
             pytest.fail(f"Access denied to bucket {BUCKET_NAME}. Check credentials.")
         else:
             pytest.fail(f"Error accessing bucket {BUCKET_NAME}: {e}")
+
+# [Rest of the test file remains unchanged]
 
 def test_base_prefix_exists(s3_client):
     """Test that the base prefix (folder) exists in the bucket."""

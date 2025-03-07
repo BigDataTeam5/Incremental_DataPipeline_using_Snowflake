@@ -32,3 +32,5 @@ def test_invalid_inputs():
     assert co2_percent_change("abc", 100) == 0.0
     assert co2_percent_change(100, "xyz") == 0.0
     assert co2_percent_change({}, []) == 0.0
+if __name__ == "__main__":
+    pytest.main(args=[__file__]) 

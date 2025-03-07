@@ -1,7 +1,0 @@
-.packages/
-.venv/
-app.zip
-requirements.snowflake.txt
-__pycache__
-weekly_changes.zip
-snowflake.yml

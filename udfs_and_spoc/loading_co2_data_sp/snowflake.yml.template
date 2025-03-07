@@ -7,7 +7,9 @@ snowpark:
     - name: "loading_co2_data_sp"
       database: "{{ DATABASE_NAME }}"
       schema: "RAW_CO2"
-      handler: "function.main"
+      handler: "function.main"  # Updated to match your actual function name
       runtime: "3.10"
       returns: "string"
       signature: []  # Required field - empty array for no parameters
+      external_access_integrations:
+        - "co2_data_ext_access"

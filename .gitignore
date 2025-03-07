@@ -15,3 +15,5 @@ orchestrate_tasks_dev.sql
 orchestrate_tasks_prod.sql
 environment.json
 lambda_function.zip
+lambda_package/*
+!lambda_package/lambda_function.py

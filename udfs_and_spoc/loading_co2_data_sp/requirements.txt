@@ -1,5 +1,3 @@
 snowflake-snowpark-python
-python-dotenv
 pandas
-boto3
 requests
