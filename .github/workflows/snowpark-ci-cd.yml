@@ -87,7 +87,7 @@ jobs:
           
       - name: Run tests
         run: |
-          pytest tests/testing_snowflake_connection.py
+          pytest tests/test_snowflake_connection.py
           pytest tests/test_s3_connection.py
           pytest tests/test_volatility_co2ppm.py
           pytest tests/test_daily_co2_changes.py
