@@ -93,7 +93,6 @@ jobs:
           pytest tests/test_daily_co2_changes.py
           pytest tests/test_weekly_co2_changes.py
           pytest tests/test_co2_harmonized_sp.py
-          
 
   deploy:
     needs: test
@@ -109,6 +108,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      
+      # Install the Snowflake CLI with Snowpark support
+      - name: Install Snowflake CLI
+        run: |
+          echo "Installing Snowflake CLI with Snowpark support..."
+          # Download and install the latest Snowflake CLI
+          pip install snowflake-cli-labs
+          
+          # Verify installation
+          snowflake --version
+          
+          # List available commands to verify snowpark is available
+          echo "Available snowflake commands:"
+          snowflake --help
       
       - name: Set environment variables based on branch
         run: |
@@ -208,34 +221,51 @@ jobs:
             local component_name=$2
             echo "⏳ Deploying $component_name..."
             cd $component_path
-            snow snowpark build --connection-name $CONN_PROFILE || { echo "❌ Build failed for $component_name"; exit 1; }
-            snow snowpark deploy --replace --connection-name $CONN_PROFILE || { echo "❌ Deploy failed for $component_name"; exit 1; }
+            
+            echo "Building $component_name in directory $(pwd)..."
+            
+            # Check if there's a YAML config file
+            if [ -f "snowflake.yml" ]; then
+              echo "Found snowflake.yml configuration file"
+              cat snowflake.yml
+            else
+              echo "No snowflake.yml found, checking for other configuration files..."
+              ls -la
+            fi
+            
+            # Use the snowflake command (not snow)
+            snowflake snowpark build --connection-name $CONN_PROFILE || { echo "❌ Build failed for $component_name"; exit 1; }
+            snowflake snowpark deploy --replace --connection-name $CONN_PROFILE || { echo "❌ Deploy failed for $component_name"; exit 1; }
+            
             cd ../..
-            echo "✅ Successfully deployed $component_name"
-          }
-          
-          echo "🚀 Starting deployments to $ENVIRONMENT environment..."
-          
-          # Deploy all components using the helper function
-          deploy_component "udfs_and_spoc/python_udf" "CO2 Volatility UDF"
-          deploy_component "udfs_and_spoc/daily_co2_changes" "Daily CO2 Changes UDF"
-          deploy_component "udfs_and_spoc/weekly_co2_changes" "Weekly CO2 Changes UDF"
-          deploy_component "udfs_and_spoc/loading_co2_data_sp" "CO2 Loading Stored Procedure"
-          deploy_component "udfs_and_spoc/co2_harmonized_sp" "CO2 Harmonized Stored Procedure"
-          deploy_component "udfs_and_spoc/co2_analytical_sp" "CO2 Analytics Stored Procedure"
-          
-          echo "🎉 All components deployed successfully!"
-      
-      - name: Orchestrate Tasks
-        run: |
-          echo "⏳ Orchestrating tasks for $ENVIRONMENT environment..."
-          snow sql -f scripts/orchestrate_tasks_${ENVIRONMENT}.sql --connection-name $CONN_PROFILE
-          
-          if [ $? -eq 0 ]; then
-            echo "✅ Tasks successfully orchestrated for $ENVIRONMENT environment"
-          else
-            echo "❌ Task orchestration failed for $ENVIRONMENT environment"
-            exit 1
-          fi
-          
-          echo "🏁 Deployment complete!"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          echo "🏁 Deployment complete!"                    fi            exit 1            echo "❌ Task orchestration failed for $ENVIRONMENT environment"          else            echo "✅ Tasks successfully orchestrated for $ENVIRONMENT environment"          if [ $? -eq 0 ]; then                    snowflake sql -f scripts/orchestrate_tasks_${ENVIRONMENT}.sql --connection-name $CONN_PROFILE          # Use snowflake command instead of snow                    echo "⏳ Orchestrating tasks for $ENVIRONMENT environment..."        run: |      - name: Orchestrate Tasks                echo "🎉 All components deployed successfully!"                    deploy_component "udfs_and_spoc/co2_analytical_sp" "CO2 Analytics Stored Procedure"          deploy_component "udfs_and_spoc/co2_harmonized_sp" "CO2 Harmonized Stored Procedure"          deploy_component "udfs_and_spoc/loading_co2_data_sp" "CO2 Loading Stored Procedure"          deploy_component "udfs_and_spoc/weekly_co2_changes" "Weekly CO2 Changes UDF"          deploy_component "udfs_and_spoc/daily_co2_changes" "Daily CO2 Changes UDF"          deploy_component "udfs_and_spoc/python_udf" "CO2 Volatility UDF"          # Deploy all components using the helper function                    echo "🚀 Starting deployments to $ENVIRONMENT environment..."                    }            echo "✅ Successfully deployed $component_name"
