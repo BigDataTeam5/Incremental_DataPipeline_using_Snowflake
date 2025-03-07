@@ -13,19 +13,11 @@ is_running_in_snowflake = 'SNOWFLAKE_PYTHON_INTERPRETER' in os.environ
 
 # Environment setup - only do file operations when running locally
 if not is_running_in_snowflake:
-    # Get the project root directory 
+    # Get the project root directory
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, "..", "..", ".."))
 
-    # Load environment variables from .env file
-    env_file = os.path.join(project_root, '.env')
-    load_dotenv(env_file)
-
-    # Use the specified environment or default to "dev"
-    env = os.getenv("ENV", "dev").lower()
-    print(f"Using environment: {env}")
-
-    # Load environment configuration from JSON file
+    # Load environment exclusively from JSON file
     try:
         env_json_path = os.path.join(project_root, "templates", "environment.json")
         print(f"Looking for environment.json at: {env_json_path}")
@@ -33,14 +25,19 @@ if not is_running_in_snowflake:
         if os.path.exists(env_json_path):
             with open(env_json_path, "r") as json_file:
                 env_config = json.load(json_file)
-            env = env_config.get("environment", env)
+            env = env_config.get("environment", "").lower()
             print(f"Loaded environment from file: {env}")
+        else:
+            # If JSON doesn't exist, use a default value
+            env = ""
+            print(f"Warning: environment.json not found. No environment configured.")
     except Exception as e:
-        print(f"Error loading environment.json: {e}")
-        print("Continuing with default environment")
+        print(f"Error loading configuration: {e}")
+        env = ""
+        print(f"Using empty environment due to error.")
 else:
-    # When running in Snowflake, use the environment from the connection or default to dev
-    env = os.getenv("SNOWFLAKE_ENV", "dev").lower()
+    # When running in Snowflake, use the environment from the connection
+    env = os.getenv("SNOWFLAKE_ENV", "").lower()
     print(f"Running in Snowflake with environment: {env}")
 
 # Use the environment to establish Snowflake connection
@@ -91,7 +88,7 @@ def fetch_co2_data_incremental(session):
     
     # Step 3: Fetch the NOAA CO2 data, focusing only on current year
     print("Fetching CO2 data from NOAA (current year only)...")
-    url = "https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_daily_mlo.txt"
+    url = "https://oc62udov6d.execute-api.us-east-2.amazonaws.com/default/lambda_handler"
 
     try:
         # Get the current year
@@ -185,7 +182,7 @@ def fetch_co2_data_incremental(session):
                 FROM (
                     SELECT 
                         $1, $2, $3, $4, $5
-                    FROM @EXTERNAL.NOAA_CO2_STAGE/{PARENT_FOLDER}/{year}/
+                    FROM @EXTERNAL.NOAA_CO2_STAGE/{year}/
                 )
                 FILE_FORMAT = (
                     TYPE = CSV
@@ -198,6 +195,7 @@ def fetch_co2_data_incremental(session):
                 """
                 result = session.sql(copy_sql).collect()
                 print(f"Loaded data for year {year}: {result}")
+                years_loaded.append(str(year))
             
             # Step 7: Verify the data was loaded and advance the stream
             count_sql = """
