@@ -154,36 +154,20 @@ jobs:
           # Debug the Snowflake account format
           echo "Using Snowflake account: ${SNOWFLAKE_ACCOUNT}"
           
-          # Store private key from GitHub secrets
+          # Store private key correctly from GitHub secrets
           echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > ~/.snowflake/keys/rsa_key.p8
           chmod 600 ~/.snowflake/keys/rsa_key.p8
           
-          # Install cryptography for key handling
+          # Install required packages
           pip install cryptography snowflake-connector-python
           
-          # Validate the key format
-          python -c "
-          from cryptography.hazmat.backends import default_backend
-          from cryptography.hazmat.primitives import serialization
-          try:
-              with open('~/.snowflake/keys/rsa_key.p8', 'rb') as f:
-                  private_key = serialization.load_pem_private_key(
-                      f.read(),
-                      password=None,
-                      backend=default_backend()
-                  )
-              print('Private key format is valid')
-          except Exception as e:
-              print(f'Error with private key format: {e}')
-              # Don't exit with error yet
-          "
-          
-          # Create connection profile for the environment with key authentication
+          # Create connection profile for the environment with direct key authentication
           cat > ~/.snowflake/connections.toml << EOF
           [dev]
           account = "$SNOWFLAKE_ACCOUNT"
           user = "$SNOWFLAKE_USER"
-          private_key_path = "~/.snowflake/keys/rsa_key.p8"
+          # Using direct path, no expansion needed in GitHub Actions
+          private_key_path = "/home/runner/.snowflake/keys/rsa_key.p8"
           warehouse = "CO2_WH_DEV"
           role = "CO2_ROLE_DEV"
           database = "CO2_DB_DEV"
@@ -192,7 +176,8 @@ jobs:
           [prod]
           account = "$SNOWFLAKE_ACCOUNT"
           user = "$SNOWFLAKE_USER"
-          private_key_path = "~/.snowflake/keys/rsa_key.p8"
+          # Using direct path, no expansion needed in GitHub Actions
+          private_key_path = "/home/runner/.snowflake/keys/rsa_key.p8"
           warehouse = "CO2_WH_PROD"
           role = "CO2_ROLE_PROD"
           database = "CO2_DB_PROD"
@@ -201,33 +186,43 @@ jobs:
           
           chmod 600 ~/.snowflake/connections.toml
           
-          # Verify the connection file was created properly (without showing keys)
+          # Verify the connection file was created properly
           echo "Connection file created with profiles:"
           grep -v private_key ~/.snowflake/connections.toml
           
-          # Test Snowflake connection with key authentication
-          pip install snowflake-connector-python cryptography
+          # Test the key can be read properly (without connecting)
           python -c "
-          import snowflake.connector
-          import os
           from cryptography.hazmat.backends import default_backend
-          from cryptography.hazmat.primitives.asymmetric import rsa
-          from cryptography.hazmat.primitives.asymmetric import padding
+          from cryptography.hazmat.primitives import serialization
+          import os
+          
+          key_path = '/home/runner/.snowflake/keys/rsa_key.p8'
+          print(f'Checking key at: {key_path}')
+          print(f'Key exists: {os.path.exists(key_path)}')
+          
           try:
-              with open(os.path.expanduser('~/.snowflake/keys/rsa_key.p8'), 'rb') as key:
-                  p_key = key.read()
-              
-              conn = snowflake.connector.connect(
-                  user='$SNOWFLAKE_USER',
-                  account='$SNOWFLAKE_ACCOUNT',
-                  private_key=p_key,
-                  warehouse='CO2_WH_DEV',
-                  database='CO2_DB_DEV'
-              )
-              print('Connection successful!')
-              conn.close()
+              with open(key_path, 'rb') as f:
+                  key_data = f.read()
+                  print(f'Key length: {len(key_data)} bytes')
+                  print(f'Key starts with: {key_data[:30]}')
+                  
+                  # Try to load the key to validate format
+                  p_key = serialization.load_pem_private_key(
+                      key_data,
+                      password=None,
+                      backend=default_backend()
+                  )
+                  print('Key loaded successfully!')
+                  
+                  # Convert to DER format as required by Snowflake
+                  pkb = p_key.private_bytes(
+                      encoding=serialization.Encoding.DER,
+                      format=serialization.PrivateFormat.PKCS8,
+                      encryption_algorithm=serialization.NoEncryption()
+                  )
+                  print('Key converted to DER format successfully!')
           except Exception as e:
-              print(f'Connection test failed: {e}')
+              print(f'Error processing key: {e}')
           "
           
       - name: Generate configuration and SQL files

@@ -64,8 +64,7 @@ def create_snowflake_connection(conn_config):
     try:
         # Check if we're using key pair authentication
         if 'private_key_path' in conn_config:
-            # Expand the path (e.g., ~ to home directory)
-            key_path = os.path.expanduser(conn_config['private_key_path'])
+            key_path = conn_config['private_key_path']
             logger.info(f"Using private key from: {key_path}")
             
             # Read the private key properly
@@ -73,29 +72,62 @@ def create_snowflake_connection(conn_config):
                 from cryptography.hazmat.backends import default_backend
                 from cryptography.hazmat.primitives import serialization
                 
+                # Log file stats to debug issues
+                if os.path.exists(key_path):
+                    logger.info(f"Private key file exists: {os.path.getsize(key_path)} bytes")
+                else:
+                    logger.error(f"Private key file not found: {key_path}")
+                    raise FileNotFoundError(f"Private key file not found: {key_path}")
+                
+                # Read key file
                 with open(key_path, "rb") as key_file:
+                    key_data = key_file.read()
+                    
+                # Try to load the private key
+                try:
                     p_key = serialization.load_pem_private_key(
-                        key_file.read(),
+                        key_data,
                         password=None,
                         backend=default_backend()
                     )
-                
-                pkb = p_key.private_bytes(
-                    encoding=serialization.Encoding.DER,
-                    format=serialization.PrivateFormat.PKCS8,
-                    encryption_algorithm=serialization.NoEncryption()
-                )
-                
-                # Connect with private key
-                return snowflake.connector.connect(
-                    account=conn_config.get('account'),
-                    user=conn_config.get('user'),
-                    private_key=pkb,
-                    warehouse=conn_config.get('warehouse'),
-                    database=conn_config.get('database'),
-                    schema=conn_config.get('schema'),
-                    role=conn_config.get('role')
-                )
+                    
+                    # Convert to DER format as required by Snowflake
+                    pkb = p_key.private_bytes(
+                        encoding=serialization.Encoding.DER,
+                        format=serialization.PrivateFormat.PKCS8,
+                        encryption_algorithm=serialization.NoEncryption()
+                    )
+                    
+                    logger.info("Private key loaded and converted successfully")
+                    
+                    # Connect with private key
+                    return snowflake.connector.connect(
+                        account=conn_config.get('account'),
+                        user=conn_config.get('user'),
+                        private_key=pkb,
+                        warehouse=conn_config.get('warehouse'),
+                        database=conn_config.get('database'),
+                        schema=conn_config.get('schema'),
+                        role=conn_config.get('role')
+                    )
+                except Exception as e:
+                    logger.error(f"Error loading private key: {str(e)}")
+                    
+                    # Fall back to password if available
+                    if 'password' in conn_config:
+                        logger.info("Falling back to password authentication")
+                        return snowflake.connector.connect(
+                            account=conn_config.get('account'),
+                            user=conn_config.get('user'),
+                            password=conn_config.get('password'),
+                            warehouse=conn_config.get('warehouse'),
+                            database=conn_config.get('database'),
+                            schema=conn_config.get('schema'),
+                            role=conn_config.get('role'),
+                            authenticator=conn_config.get('authenticator', 'snowflake')
+                        )
+                    else:
+                        raise
             except Exception as e:
                 logger.error(f"Error processing private key: {str(e)}")
                 raise
