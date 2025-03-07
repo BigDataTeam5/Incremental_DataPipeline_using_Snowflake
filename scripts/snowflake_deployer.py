@@ -190,6 +190,19 @@ def deploy_component(profile_name, component_path, component_name, component_typ
                 for f in files:
                     logger.info(f"{sub_indent}{f}")
             
+            # Check if UDF requires session parameter by examining function.py
+            has_session_param = False
+            try:
+                function_file = os.path.join(code_dir, "function.py")
+                if os.path.exists(function_file):
+                    with open(function_file, 'r') as f:
+                        content = f.read()
+                        if "def main(session, input_data" in content:
+                            logger.info("Detected UDF with session parameter")
+                            has_session_param = True
+            except Exception as e:
+                logger.warning(f"Could not check function signature: {str(e)}")
+            
             # Zip the directory
             zip_directory(code_dir, zip_path)
             logger.info(f"Created zip file: {zip_path}")
@@ -204,6 +217,7 @@ def deploy_component(profile_name, component_path, component_name, component_typ
             import_path = f"@{stage_name}/{component_name.replace(' ', '_')}/{zip_filename}"
             
             if component_type.lower() == "udf":
+                # For Snowpark UDFs that use session parameter
                 sql = f"""
                 CREATE OR REPLACE FUNCTION {component_name.replace(' ', '_')}(input_data VARIANT)
                 RETURNS VARIANT
