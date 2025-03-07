@@ -7,7 +7,7 @@ from datetime import datetime
 from unittest.mock import patch, MagicMock, Mock
 # Add the parent directory to path so we can import the function module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from udfs_and_spoc.loading_data_sp.function import fetch_co2_data_incremental
+from udfs_and_spoc.loading_co2_data_sp.loading_data_sp.function import fetch_co2_data_incremental
 
 @pytest.fixture
 def mock_session():
