@@ -27,7 +27,7 @@ def load_connection_profiles():
         logger.error(f"Error loading connection profiles: {str(e)}")
         return {}
 
-def test_connection_profile(profile_name, connection_params):
+def _test_connection_profile(profile_name, connection_params):
     """Test a specific connection profile."""
     conn = None
     try:
@@ -72,7 +72,7 @@ def test_all_profiles():
         pytest.fail("No connection profiles found")
     
     for profile_name, params in profiles.items():
-        success, details = test_connection_profile(profile_name, params)
+        success, details = _test_connection_profile(profile_name, params)
         results[profile_name] = {
             'success': success,
             'details': details,
@@ -96,7 +96,7 @@ def test_default_connection():
     profiles = load_connection_profiles()
     if 'default' not in profiles:
         pytest.skip("No 'default' connection profile found")
-    success, _ = test_connection_profile('default', profiles['default'])
+    success, _ = _test_connection_profile('default', profiles['default'])
     assert success, "Default connection failed"
 
 def test_dev_connection():
@@ -104,7 +104,7 @@ def test_dev_connection():
     profiles = load_connection_profiles()
     if 'dev' not in profiles:
         pytest.skip("No 'dev' connection profile found")
-    success, _ = test_connection_profile('dev', profiles['dev'])
+    success, _ = _test_connection_profile('dev', profiles['dev'])
     assert success, "Dev connection failed"
 
 def test_prod_connection():
@@ -112,7 +112,7 @@ def test_prod_connection():
     profiles = load_connection_profiles()
     if 'prod' not in profiles:
         pytest.skip("No 'prod' connection profile found")
-    success, _ = test_connection_profile('prod', profiles['prod'])
+    success, _ = _test_connection_profile('prod', profiles['prod'])
     assert success, "Prod connection failed"
 
 # Run tests directly when executed as script
