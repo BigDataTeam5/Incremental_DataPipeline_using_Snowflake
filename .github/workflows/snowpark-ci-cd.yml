@@ -158,13 +158,32 @@ jobs:
           echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > ~/.snowflake/keys/rsa_key.p8
           chmod 600 ~/.snowflake/keys/rsa_key.p8
           
+          # Install cryptography for key handling
+          pip install cryptography snowflake-connector-python
+          
+          # Validate the key format
+          python -c "
+          from cryptography.hazmat.backends import default_backend
+          from cryptography.hazmat.primitives import serialization
+          try:
+              with open('~/.snowflake/keys/rsa_key.p8', 'rb') as f:
+                  private_key = serialization.load_pem_private_key(
+                      f.read(),
+                      password=None,
+                      backend=default_backend()
+                  )
+              print('Private key format is valid')
+          except Exception as e:
+              print(f'Error with private key format: {e}')
+              # Don't exit with error yet
+          "
+          
           # Create connection profile for the environment with key authentication
           cat > ~/.snowflake/connections.toml << EOF
           [dev]
           account = "$SNOWFLAKE_ACCOUNT"
           user = "$SNOWFLAKE_USER"
           private_key_path = "~/.snowflake/keys/rsa_key.p8"
-          authenticator = "snowflake_jwt"
           warehouse = "CO2_WH_DEV"
           role = "CO2_ROLE_DEV"
           database = "CO2_DB_DEV"
@@ -174,7 +193,6 @@ jobs:
           account = "$SNOWFLAKE_ACCOUNT"
           user = "$SNOWFLAKE_USER"
           private_key_path = "~/.snowflake/keys/rsa_key.p8"
-          authenticator = "snowflake_jwt"
           warehouse = "CO2_WH_PROD"
           role = "CO2_ROLE_PROD"
           database = "CO2_DB_PROD"

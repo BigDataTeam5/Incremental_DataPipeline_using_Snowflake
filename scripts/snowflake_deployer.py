@@ -66,21 +66,39 @@ def create_snowflake_connection(conn_config):
         if 'private_key_path' in conn_config:
             # Expand the path (e.g., ~ to home directory)
             key_path = os.path.expanduser(conn_config['private_key_path'])
+            logger.info(f"Using private key from: {key_path}")
             
-            # Read the private key
-            with open(key_path, 'rb') as key_file:
-                private_key = key_file.read()
+            # Read the private key properly
+            try:
+                from cryptography.hazmat.backends import default_backend
+                from cryptography.hazmat.primitives import serialization
                 
-            # Connect with private key
-            return snowflake.connector.connect(
-                account=conn_config.get('account'),
-                user=conn_config.get('user'),
-                private_key=private_key,
-                warehouse=conn_config.get('warehouse'),
-                database=conn_config.get('database'),
-                schema=conn_config.get('schema'),
-                role=conn_config.get('role')
-            )
+                with open(key_path, "rb") as key_file:
+                    p_key = serialization.load_pem_private_key(
+                        key_file.read(),
+                        password=None,
+                        backend=default_backend()
+                    )
+                
+                pkb = p_key.private_bytes(
+                    encoding=serialization.Encoding.DER,
+                    format=serialization.PrivateFormat.PKCS8,
+                    encryption_algorithm=serialization.NoEncryption()
+                )
+                
+                # Connect with private key
+                return snowflake.connector.connect(
+                    account=conn_config.get('account'),
+                    user=conn_config.get('user'),
+                    private_key=pkb,
+                    warehouse=conn_config.get('warehouse'),
+                    database=conn_config.get('database'),
+                    schema=conn_config.get('schema'),
+                    role=conn_config.get('role')
+                )
+            except Exception as e:
+                logger.error(f"Error processing private key: {str(e)}")
+                raise
         else:
             # Connect with password
             return snowflake.connector.connect(

@@ -22,4 +22,4 @@ Note: if you dont have openssl installed in your system, try running the below c
 # copy the public key into the following snowflake command:
     ALTER USER SHUSHIL SET RSA_PUBLIC_KEY='YOUR_PUBLIC_KEY_STRING_HERE';
 # COPY  the private key into the github secrets using the comand:
-    (Get-Content "$HOME\.snowflake\keys\rsa_key.p8") -join "\n"
+    (Get-Content "$HOME\.snowflake\keys\rsa_key.p8" | Select-String -NotMatch "BEGIN|END") -join ""

@@ -10,3 +10,4 @@ typer==0.15.2
 exceptiongroup>=1.2.2
 iniconfig==2.0.0
 tomli>=2.2.1
+cryptography
