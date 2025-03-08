@@ -17,3 +17,4 @@ environment.json
 lambda_function.zip
 lambda_package/*
 !lambda_package/lambda_function.py
+.force_deploy

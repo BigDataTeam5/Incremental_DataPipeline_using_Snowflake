@@ -156,6 +156,21 @@ def deploy_component(profile_name, component_path, component_name, component_typ
     if conn_config is None:
         return False
     
+    # Check if component path exists
+    if not os.path.exists(component_path):
+        logger.error(f"Component path not found: {component_path}")
+        return False
+    
+    # Log component directory structure for debugging
+    logger.info(f"Component path: {component_path}")
+    logger.info(f"Component directory contents:")
+    for item in os.listdir(component_path):
+        item_path = os.path.join(component_path, item)
+        if os.path.isdir(item_path):
+            logger.info(f"  📁 {item}/")
+        else:
+            logger.info(f"  📄 {item}")
+    
     conn = None
     try:
         # Connect to Snowflake using the enhanced connection function
@@ -183,7 +198,7 @@ def deploy_component(profile_name, component_path, component_name, component_typ
             # Check and fix UDF function signature if necessary
             if component_type.lower() == "udf":
                 logger.info(f"Checking and fixing UDF function signature for {component_name}")
-                os.system(f"python scripts/check_and_fix_udf.py {code_dir}")
+                os.system(f"python scripts/deployment_files/check_and_fix_udf.py {code_dir}")
             
             # Log directory contents
             logger.info(f"Component directory structure:")
