@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import json
 import sys
 
+
 # Determine if we're running in Snowflake or locally
 is_running_in_snowflake = 'SNOWFLAKE_PYTHON_INTERPRETER' in os.environ
 
