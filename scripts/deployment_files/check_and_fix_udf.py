@@ -1,6 +1,11 @@
 import os
 import sys
 import argparse
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 def fix_udf_function(udf_path):
     """
@@ -10,7 +15,7 @@ def fix_udf_function(udf_path):
     function_file = os.path.join(udf_path, "function.py")
     
     if not os.path.exists(function_file):
-        print(f"Error: Function file not found at: {function_file}")
+        logger.error(f"Error: Function file not found at: {function_file}")
         return False
     
     # Back up original file
@@ -24,9 +29,15 @@ def fix_udf_function(udf_path):
             f.write(content)
             
         # Check if the function has a session parameter
-        if "def main(session, input_data" in content:
-            print("Found Snowpark UDF with session parameter")
+        # We need to be more thorough in our detection
+        if "def main(session" in content or "def main( session" in content:
+            logger.info("Found Snowpark UDF with session parameter")
             
+            # Check if it's already been wrapped
+            if "def main_with_session(session" in content:
+                logger.info("Function is already wrapped - no need to modify")
+                return True
+                
             # Add wrapper function that gets session from snowflake.snowpark.functions
             modified_content = content.replace(
                 "def main(session, input_data",
@@ -69,27 +80,61 @@ def main(input_data"""
             with open(function_file, 'w') as f:
                 f.write(modified_content)
                 
-            print(f"✅ Updated {function_file} with wrapper function")
-            print(f"Original file backed up to {backup_file}")
+            logger.info(f"✅ Updated {function_file} with wrapper function")
+            logger.info(f"Original file backed up to {backup_file}")
             return True
         else:
-            print("No session parameter detected, no changes needed")
+            logger.info("No session parameter detected, no changes needed")
             return False
             
     except Exception as e:
-        print(f"Error fixing UDF: {e}")
+        logger.error(f"Error fixing UDF: {e}")
         # Try to restore backup if it exists
         if os.path.exists(backup_file):
-            print("Restoring backup...")
+            logger.info("Restoring backup...")
             with open(backup_file, 'r') as f:
                 original = f.read()
             with open(function_file, 'w') as f:
                 f.write(original)
         return False
 
+def analyze_udf_file(udf_path):
+    """Analyze the UDF file to determine its signature."""
+    function_file = os.path.join(udf_path, "function.py")
+    
+    if not os.path.exists(function_file):
+        logger.error(f"Function file not found: {function_file}")
+        return
+        
+    with open(function_file, 'r') as f:
+        content = f.read()
+    
+    logger.info(f"Analyzing UDF in {function_file}")
+    
+    # Extract the main function signature
+    import re
+    sig_match = re.search(r'def\s+main\s*\((.*?)\)', content)
+    if sig_match:
+        params = sig_match.group(1)
+        logger.info(f"Function signature parameters: '{params}'")
+        if "session" in params:
+            logger.info("This UDF uses the Snowpark session parameter and needs wrapping")
+            return True
+    
+    return False
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Fix UDF function for Snowflake compatibility')
     parser.add_argument('udf_path', help='Path to UDF directory containing function.py')
+    parser.add_argument('--analyze', action='store_true', help='Just analyze, don\'t fix')
     
     args = parser.parse_args()
-    fix_udf_function(args.udf_path)
+    
+    if args.analyze:
+        analyze_udf_file(args.udf_path)
+    else:
+        needs_fix = analyze_udf_file(args.udf_path)
+        if needs_fix:
+            fix_udf_function(args.udf_path)
+        else:
+            logger.info("UDF doesn't need fixing")

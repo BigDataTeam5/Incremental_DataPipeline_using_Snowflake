@@ -147,6 +147,41 @@ def create_snowflake_connection(conn_config):
         logger.error(f"Failed to create Snowflake connection: {str(e)}")
         raise
 
+def analyze_function_signature(function_file):
+    """Analyze the function signature to determine parameter structure."""
+    try:
+        import re
+        with open(function_file, 'r') as f:
+            content = f.read()
+        
+        # Look for the main function definition
+        signature_match = re.search(r'def\s+main\s*\((.*?)\)', content)
+        if signature_match:
+            params = signature_match.group(1).strip()
+            logger.info(f"Function signature parameters: '{params}'")
+            
+            # Count parameters (excluding session if present)
+            param_list = [p.strip() for p in params.split(',') if p.strip()]
+            
+            # Check if session is a parameter
+            has_session = any(p.strip().startswith('session') for p in param_list)
+            param_count = len(param_list)
+            
+            return {
+                'has_session': has_session,
+                'param_count': param_count,
+                'param_list': param_list
+            }
+    except Exception as e:
+        logger.error(f"Error analyzing function signature: {e}")
+    
+    # Default fallback
+    return {
+        'has_session': False,
+        'param_count': 1,
+        'param_list': ['input_data']
+    }
+
 def deploy_component(profile_name, component_path, component_name, component_type):
     """Deploy a component to Snowflake."""
     logger.info(f"Deploying component: {component_name} ({component_type})")
@@ -196,9 +231,14 @@ def deploy_component(profile_name, component_path, component_name, component_typ
                     logger.info(f"Using actual code directory: {code_dir}")
             
             # Check and fix UDF function signature if necessary
-            if component_type.lower() == "udf":
-                logger.info(f"Checking and fixing UDF function signature for {component_name}")
-                os.system(f"python scripts/deployment_files/check_and_fix_udf.py {code_dir}")
+            function_file = os.path.join(code_dir, "function.py")
+            signature_info = {'has_session': False, 'param_count': 1, 'param_list': ['input_data']}
+            
+            if component_type.lower() == "udf" and os.path.exists(function_file):
+                logger.info(f"Analyzing UDF function signature for {component_name}")
+                signature_info = analyze_function_signature(function_file)
+                logger.info(f"Function analysis: Session={signature_info['has_session']}, "
+                           f"Param Count={signature_info['param_count']}")
             
             # Log directory contents
             logger.info(f"Component directory structure:")
@@ -224,16 +264,39 @@ def deploy_component(profile_name, component_path, component_name, component_typ
             import_path = f"@{stage_name}/{component_name.replace(' ', '_')}/{zip_filename}"
             
             if component_type.lower() == "udf":
-                # For Snowpark UDFs - different SQL based on parameter signature
-                sql = f"""
-                CREATE OR REPLACE FUNCTION {component_name.replace(' ', '_')}(input_data VARIANT)
-                RETURNS VARIANT
-                LANGUAGE PYTHON
-                RUNTIME_VERSION=3.8
-                PACKAGES = ('snowflake-snowpark-python')
-                HANDLER = 'function.main'
-                IMPORTS = ('{import_path}')
-                """
+                # Adjust SQL based on parameter count
+                if signature_info['param_count'] == 1:
+                    sql = f"""
+                    CREATE OR REPLACE FUNCTION {component_name.replace(' ', '_')}(input_data VARIANT)
+                    RETURNS VARIANT
+                    LANGUAGE PYTHON
+                    RUNTIME_VERSION=3.8
+                    PACKAGES = ('snowflake-snowpark-python')
+                    IMPORTS = ('{import_path}')
+                    HANDLER = 'function.main'
+                    """
+                elif signature_info['param_count'] == 2:
+                    # For two parameters
+                    sql = f"""
+                    CREATE OR REPLACE FUNCTION {component_name.replace(' ', '_')}(current_value FLOAT, previous_value FLOAT)
+                    RETURNS FLOAT
+                    LANGUAGE PYTHON
+                    RUNTIME_VERSION=3.8
+                    PACKAGES = ('snowflake-snowpark-python')
+                    IMPORTS = ('{import_path}')
+                    HANDLER = 'function.main'
+                    """
+                else:
+                    # Fallback to standard variant parameter
+                    sql = f"""
+                    CREATE OR REPLACE FUNCTION {component_name.replace(' ', '_')}(input_data VARIANT)
+                    RETURNS VARIANT
+                    LANGUAGE PYTHON
+                    RUNTIME_VERSION=3.8
+                    PACKAGES = ('snowflake-snowpark-python')
+                    IMPORTS = ('{import_path}')
+                    HANDLER = 'function.main'
+                    """
             else:  # procedure
                 sql = f"""
                 CREATE OR REPLACE PROCEDURE {component_name.replace(' ', '_')}()
