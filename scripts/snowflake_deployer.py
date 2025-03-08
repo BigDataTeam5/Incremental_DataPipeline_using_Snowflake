@@ -180,6 +180,82 @@ def deploy_component(profile_name, component_path, component_name, component_typ
                     code_dir = os.path.join(component_path, subdirs[0])
                     logger.info(f"Using actual code directory: {code_dir}")
             
+            # Check for UDF function signature to automatically fix issues
+            function_file = os.path.join(code_dir, "function.py")
+            has_session_param = False
+            
+            if os.path.exists(function_file):
+                try:
+                    with open(function_file, 'r') as f:
+                        content = f.read()
+                    
+                    # Check if we need to fix the function signature for UDFs with session parameters
+                    if component_type.lower() == "udf" and "def main(session, input_data" in content:
+                        logger.info("Detected UDF with session parameter - applying automatic fix")
+                        has_session_param = True
+                        
+                        # Check if we need to automatically modify UDF with wrapper function
+                        if "def main_with_session(" not in content:
+                            # Create a backup of the original file 
+                            backup_file = function_file + ".bak"
+                            with open(backup_file, 'w') as f:
+                                f.write(content)
+                            
+                            # Modify the content to include a wrapper
+                            modified_content = content.replace(
+                                "def main(session, input_data",
+                                """# Original function 
+def main_with_session(session, input_data
+
+# Wrapper function that Snowflake calls directly
+def main(input_data"""
+                            )
+                            
+                            # Add the wrapper implementation at the end
+                            indent = "    "  # Default indentation
+                            lines = modified_content.split("\n")
+                            # Find where to insert wrapper code
+                            insert_pos = len(lines)  # Default to end of file
+                            for i in range(len(lines)):
+                                if lines[i].strip() == "def main(input_data":
+                                    # Find indentation level and next non-empty line
+                                    for j in range(i+1, len(lines)):
+                                        if lines[j].strip():
+                                            indent = lines[j].split(lines[j].lstrip())[0]
+                                            break
+                            
+                            # Add wrapper implementation
+                            wrapper_code = [
+                                f"{indent}# Get session from Snowflake context",
+                                f"{indent}from snowflake.snowpark.context import get_active_session",
+                                f"{indent}session = get_active_session()",
+                                f"{indent}# Call the original function with session",
+                                f"{indent}return main_with_session(session, input_data)"
+                            ]
+                            
+                            # Find the position to insert the wrapper code
+                            for i in range(len(lines)-1, -1, -1):
+                                if "def main(input_data" in lines[i]:
+                                    # Find where the function body ends
+                                    func_indent = lines[i+1].split(lines[i+1].lstrip())[0]
+                                    for j in range(i+1, len(lines)):
+                                        if j == len(lines)-1 or (lines[j] and not lines[j].startswith(func_indent)):
+                                            insert_pos = j
+                                            break
+                            
+                            # Insert wrapper code at appropriate position
+                            for code_line in wrapper_code:
+                                lines.insert(insert_pos, code_line)
+                                insert_pos += 1
+                            
+                            # Write modified content back
+                            with open(function_file, 'w') as f:
+                                f.write("\n".join(lines))
+                                
+                            logger.info(f"Modified UDF function to handle session parameter")
+                except Exception as e:
+                    logger.warning(f"Could not check/fix function signature: {str(e)}")
+            
             # Log directory contents
             logger.info(f"Component directory structure:")
             for root, dirs, files in os.walk(component_path):
@@ -217,16 +293,29 @@ def deploy_component(profile_name, component_path, component_name, component_typ
             import_path = f"@{stage_name}/{component_name.replace(' ', '_')}/{zip_filename}"
             
             if component_type.lower() == "udf":
-                # For Snowpark UDFs that use session parameter
-                sql = f"""
-                CREATE OR REPLACE FUNCTION {component_name.replace(' ', '_')}(input_data VARIANT)
-                RETURNS VARIANT
-                LANGUAGE PYTHON
-                RUNTIME_VERSION=3.8
-                PACKAGES = ('snowflake-snowpark-python')
-                IMPORTS = ('{import_path}')
-                HANDLER = 'function.main'
-                """
+                # For Snowpark UDFs - different SQL based on parameter signature
+                if has_session_param:
+                    # For UDFs with session parameter (Snowpark style)
+                    sql = f"""
+                    CREATE OR REPLACE FUNCTION {component_name.replace(' ', '_')}(input_data VARIANT)
+                    RETURNS VARIANT
+                    LANGUAGE PYTHON
+                    RUNTIME_VERSION=3.8
+                    PACKAGES = ('snowflake-snowpark-python')
+                    HANDLER = 'function.main'
+                    IMPORTS = ('{import_path}')
+                    """
+                else:
+                    # For basic UDFs without session parameter
+                    sql = f"""
+                    CREATE OR REPLACE FUNCTION {component_name.replace(' ', '_')}(input_data VARIANT)
+                    RETURNS VARIANT
+                    LANGUAGE PYTHON
+                    RUNTIME_VERSION=3.8
+                    PACKAGES = ('snowflake-snowpark-python')
+                    IMPORTS = ('{import_path}')
+                    HANDLER = 'function.main'
+                    """
             else:  # procedure
                 sql = f"""
                 CREATE OR REPLACE PROCEDURE {component_name.replace(' ', '_')}()

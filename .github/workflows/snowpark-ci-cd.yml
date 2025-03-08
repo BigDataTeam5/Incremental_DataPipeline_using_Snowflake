@@ -265,16 +265,27 @@ jobs:
             local component_name=$2
             local component_type=$3
             
-            echo "⏳ Deploying $component_name..."
+            # Check if component files have changed since last deployment
+            echo "Checking for changes in $component_path..."
             
-            # Use our Python deployment script with additional logging
-            PYTHONPATH=$PYTHONPATH:$(pwd) python -u scripts/snowflake_deployer.py deploy --profile $CONN_PROFILE --path "$component_path" --name "$component_name" --type "$component_type"
+            # Get the last commit hash where this component was changed
+            local last_change=$(git log -n 1 --format=format:%H --full-diff -- "$component_path")
             
-            if [ $? -eq 0 ]; then
-              echo "✅ Successfully deployed $component_name"
+            # If we're on main branch or there are changes in the component files, deploy
+            if [[ -n "$last_change" && $(git rev-list HEAD^..HEAD | grep -c $last_change) -gt 0 ]]; then
+              echo "⏳ Deploying $component_name (changes detected)..."
+              
+              # Use our Python deployment script with additional logging
+              PYTHONPATH=$PYTHONPATH:$(pwd) python -u scripts/snowflake_deployer.py deploy --profile $CONN_PROFILE --path "$component_path" --name "$component_name" --type "$component_type"
+              
+              if [ $? -eq 0 ]; then
+                echo "✅ Successfully deployed $component_name"
+              else
+                echo "❌ Deploy failed for $component_name"
+                exit 1
+              fi
             else
-              echo "❌ Deploy failed for $component_name"
-              exit 1
+              echo "⏭️ Skipping $component_name (no changes detected)"
             fi
           }
           
@@ -290,20 +301,4 @@ jobs:
           deploy_component "udfs_and_spoc/co2_harmonized_sp" "HARMONIZE_CO2_DATA" "procedure"
           deploy_component "udfs_and_spoc/co2_analytical_sp" "ANALYZE_CO2_DATA" "procedure"
           
-          echo "🎉 All components deployed successfully!"
-      
-      - name: Orchestrate Tasks
-        run: |
-          echo "⏳ Orchestrating tasks for $ENVIRONMENT environment..."
-          
-          # Use our Python script to execute SQL
-          python scripts/snowflake_deployer.py sql --profile $CONN_PROFILE --file "scripts/orchestrate_tasks_${ENVIRONMENT}.sql"
-          
-          if [ $? -eq 0 ]; then
-            echo "✅ Tasks successfully orchestrated for $ENVIRONMENT environment"
-          else
-            echo "❌ Task orchestration failed for $ENVIRONMENT environment"
-            exit 1
-          fi
-          
-          echo "🏁 Deployment complete!"
+          echo "🎉 All components processed successfully!"
