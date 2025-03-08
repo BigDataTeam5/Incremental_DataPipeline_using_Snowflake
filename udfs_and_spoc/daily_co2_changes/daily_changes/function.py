@@ -1,3 +1,4 @@
+
 def co2_percent_change(previous_value, current_value):
     """
     Compute the daily percent change in CO2 ppm values.
