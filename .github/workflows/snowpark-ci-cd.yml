@@ -18,18 +18,16 @@ jobs:
       AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Conda
-        uses: conda-incubator/setup-miniconda@v2
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          auto-update-conda: true
           python-version: '3.10'
-          activate-environment: snowflake-demo
-      
-      - name: Install dependencies with Conda
-        shell: bash -l {0}
+      - name: Install dependencies
         run: |
-          # Install from environment.yml
-          conda env update --file environment.yml --prune
+          python -m pip install --upgrade pip
+                  
+          # Install from requirements.txt
+          pip install -r requirements.txt
           
           # Just verify Snow CLI version - don't try to use other commands that might not exist
           snow --version || echo "Snow CLI version check failed"
@@ -107,18 +105,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Conda
-        uses: conda-incubator/setup-miniconda@v2
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          auto-update-conda: true
           python-version: '3.10'
-          activate-environment: snowflake-demo
-          
-      - name: Install dependencies with Conda
-        shell: bash -l {0}
+      - name: Install dependencies
         run: |
-          # Install from environment.yml
-          conda env update --file environment.yml --prune
+          python -m pip install --upgrade pip
+                    
+          # Install from requirements.txt with force reinstall for key packages
+          pip install -r requirements.txt --force-reinstall
+          
+          # Install specific version we know works (avoid 0.2.9)
+          pip install snowflake-connector-python==3.13.2 snowflake-snowpark-python==1.25.0
           
           # Just verify Snow CLI version - no extension or snowpark commands
           snow --version
