@@ -4,7 +4,6 @@
 # Last Updated: [Current Date]
 #------------------------------------------------------------------------------
  
-
 import sys
  
 def calculate_co2_volatility(current_value: float, previous_value: float):

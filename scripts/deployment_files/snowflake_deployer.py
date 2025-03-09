@@ -112,7 +112,15 @@ def create_snowflake_connection(conn_config):
                         'authenticator': 'snowflake'
                     }
                     
-                    logger.info(f"Connecting with params: {', '.join(f'{k}={v if k != 'private_key' else '[REDACTED]'}' for k, v in params.items())}")
+                    # Fix the f-string syntax by using a helper function
+                    param_strs = []
+                    for k, v in params.items():
+                        if k == 'private_key':
+                            param_strs.append(f"{k}=[REDACTED]")
+                        else:
+                            param_strs.append(f"{k}={v}")
+                    
+                    logger.info(f"Connecting with params: {', '.join(param_strs)}")
                     
                     # Connect with private key
                     return snowflake.connector.connect(**params)
