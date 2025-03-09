@@ -6,6 +6,7 @@
 
 import sys
  
+
 def calculate_co2_volatility(current_value: float, previous_value: float):
     """
     Calculate the volatility between two CO2 measurements.
