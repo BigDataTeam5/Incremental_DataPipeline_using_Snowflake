@@ -29,9 +29,8 @@ jobs:
           # Install from requirements.txt
           pip install -r requirements.txt
           
-          # Verify Snow CLI installation - use simpler command that works with older versions
+          # Just verify Snow CLI version - don't try to use other commands that might not exist
           snow --version || echo "Snow CLI version check failed"
-          snow object list --help || echo "Snow CLI command check failed"
           
       - name: Set environment variables based on branch
         run: |
@@ -114,16 +113,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
                     
-          # Install from requirements.txt
-          pip install -r requirements.txt
+          # Install from requirements.txt with force reinstall for key packages
+          pip install -r requirements.txt --force-reinstall
           
-          # Install Snow CLI and Snowpark extension explicitly
-          pip install snowflake-cli snowflake-cli-labs
-          snow extension install snowpark
+          # Install specific version we know works (avoid 0.2.9)
+          pip install snowflake-connector-python==3.13.2 snowflake-snowpark-python==1.25.0
           
-          # Verify Snow CLI installation
+          # Just verify Snow CLI version - no extension or snowpark commands
           snow --version
-          snow help | grep snowpark
+          
+          # Try an informative command that should work in most versions
+          snow --help || echo "Can't get help"
           
       - name: Set environment variables based on branch
         run: |
