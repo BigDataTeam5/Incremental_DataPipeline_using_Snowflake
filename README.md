@@ -12,7 +12,7 @@ The pipeline follows a multi-layer data architecture:
 1. **Raw Layer** - Contains raw CO2 data loaded directly from source files
 2. **Harmonized Layer** - Standardized data with consistent formatting and data quality checks
 3. **Analytics Layer** - Derived tables with aggregations, metrics, and enriched attributes for analysis
-
+4. **External Layer** - Storing all the stages and for implementing external access integration and policies for external outbound network call.
 ### Key Components:
 
 - **Raw Data Ingestion** - Loads CO2 data from S3 into the raw layer
@@ -28,6 +28,7 @@ The pipeline follows a multi-layer data architecture:
 - **Snowpark** - Snowflake's Python API for data processing
 - **GitHub Actions** - CI/CD pipeline
 - **AWS S3** - Data storage for source files
+- **AWS Lambda** - Creating Lambda function with API Gateway for routing network api calls
 - **pytest** - Testing framework
 
 ## Setup and Installation
@@ -44,28 +45,33 @@ The pipeline follows a multi-layer data architecture:
 1. Clone the repository:
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/BigDataTeam5/Incremental_DataPipleine_using_Snowflake.git
 cd Incremental_DataPipleine_using_Snowflake
 ```
 
-2. Create and activate a virtual environment:
+2. Create and activate a virtual environment using poetry:
+    ### Windows Installation
+    ```
+    # Using PowerShell
+    (Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | python -
+    ```
+    after installing, 
+    ```
+    cd Incremental_DataPipleine_using_Snowflake
+    poetry show
+    ```
+    run any python file along with poetry command
+    ```
+    poetry run python <your_script>.py
+    ```
 
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
 
-3. Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
 
 4. Set up RSA key pair authentication:
 
 ```bash
 mkdir -p ~/.snowflake/keys
-python scripts/rsa_key_pair_authentication/generate_snowflake_keys.py
+poetry python scripts/rsa_key_pair_authentication/generate_snowflake_keys.py
 ```
 
 5. Configure Snowflake connection by creating `~/.snowflake/connections.toml`:
@@ -74,6 +80,7 @@ python scripts/rsa_key_pair_authentication/generate_snowflake_keys.py
 [dev]
 account = "your-account"
 user = "your-username"
+password= "your-password"
 private_key_path = "~/.snowflake/keys/rsa_key.p8"
 warehouse = "CO2_WH_DEV"
 role = "CO2_ROLE_DEV"
@@ -84,6 +91,7 @@ client_request_mfa_token = false
 [prod]
 account = "your-account"
 user = "your-username"
+password= "your-password"
 private_key_path = "~/.snowflake/keys/rsa_key.p8"
 warehouse = "CO2_WH_PROD"
 role = "CO2_ROLE_PROD"
@@ -122,7 +130,7 @@ ALTER USER YourUsername SET RSA_PUBLIC_KEY='<public-key-string>';
 2. Create required Snowflake resources:
 
 ```bash
-python scripts/deployment_files/snowflake_deployer.py sql --profile dev --file scripts/setup_dev.sql
+poetry run python scripts/deployment_files/snowflake_deployer.py sql --profile dev --file scripts/setup_dev.sql
 ```
 
 ## Project Structure
@@ -157,13 +165,13 @@ Incremental_DataPipleine_using_Snowflake/
 ### Loading Raw Data
 
 ```bash
-python scripts/raw\ data\ loading\ and\ stream\ creation/raw_co2_data.py
+poetry run python scripts/raw\ data\ loading\ and\ stream\ creation/raw_co2_data.py
 ```
 
 ### Creating Streams for Change Data Capture
 
 ```bash
-python scripts/raw\ data\ loading\ and\ stream\ creation/02_create_rawco2data_stream.py
+poetry run python scripts/raw\ data\ loading\ and\ stream\ creation/02_create_rawco2data_stream.py
 ```
 
 ### Running Tests
@@ -176,7 +184,7 @@ pytest tests/
 
 Deploy all components:
 ```bash
-python scripts/deployment_files/snowflake_deployer.py deploy-all --profile dev --path udfs_and_spoc --check-changes
+poetry run python scripts/deployment_files/snowflake_deployer.py deploy-all --profile dev --path udfs_and_spoc --check-changes
 ```
 
 Deploy a specific component:
@@ -218,7 +226,7 @@ Common issues and solutions:
 
 - **Authentication Errors**: Verify key permissions and format
 - **Deployment Failures**: Check function signatures and parameter counts
-- **Connection Issues**: Run `python scripts/deployment_files/check_connections_file.py` to validate your connections.toml
+- **Connection Issues**: Run `poetry run python scripts/deployment_files/check_connections_file.py` to validate your connections.toml
 
 ## Contributing
 
