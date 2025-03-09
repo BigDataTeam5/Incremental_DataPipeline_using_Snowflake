@@ -410,32 +410,51 @@ def verify_snow_cli_installation():
     try:
         # Try to check if snow CLI is installed
         result = subprocess.run(["snow", "--version"], capture_output=True, text=True)
-        logger.info(f"Snow CLI is already installed: {result.stdout.strip()}")
+        version_output = result.stdout.strip()
+        logger.info(f"Snow CLI is installed: {version_output}")
         
-        # Check if snowpark command is available
-        help_output = subprocess.run(["snow", "help"], capture_output=True, text=True).stdout
-        if "snowpark" not in help_output:
-            logger.warning("Snow CLI is installed but missing 'snowpark' command. Installing Snowpark extension...")
-            # Install Snowpark extension
-            subprocess.run(["snow", "extension", "install", "snowpark"], check=True)
-            logger.info("Snowpark extension installed successfully")
+        # Parse the version number to determine command availability
+        version_str = version_output.split(": ")[-1] if ": " in version_output else version_output
+        version_parts = version_str.split('.')
         
+        try:
+            major = int(version_parts[0])
+            minor = int(version_parts[1]) if len(version_parts) > 1 else 0
+            
+            logger.info(f"Snow CLI version parsed: {major}.{minor}")
+            
+            # Use appropriate commands based on version
+            if major == 0 and minor < 3:
+                # For older versions like 0.2.9, check if we can list objects
+                check_cmd = ["snow", "object", "list", "--help"]
+                logger.info("Using Snow CLI legacy commands (v0.2.x)")
+            else:
+                # For newer versions, we expect snowpark commands
+                check_cmd = ["snow", "--help"]
+                logger.info("Using Snow CLI modern commands (v0.3+)")
+                
+            # Check if basic commands work
+            help_result = subprocess.run(check_cmd, capture_output=True, text=True)
+            if help_result.returncode != 0:
+                logger.warning(f"Snow CLI command check failed: {help_result.stderr}")
+            else:
+                logger.info("Snow CLI command check passed")
+        except (ValueError, IndexError):
+            logger.warning(f"Could not parse Snow CLI version: {version_str}")
+            
         return True
+        
     except (subprocess.SubprocessError, FileNotFoundError):
         logger.warning("Snow CLI not found. Attempting to install...")
         
         try:
             # Install Snow CLI using pip
-            subprocess.run(["pip", "install", "--upgrade", "snowflake-cli", "snowflake-cli-labs"], check=True)
+            subprocess.run(["pip", "install", "--upgrade", "snowflake-cli==0.3.0", "snowflake-cli-labs==0.2.0"], check=True)
             logger.info("Successfully installed Snow CLI via pip")
             
             # Verify installation
             result = subprocess.run(["snow", "--version"], capture_output=True, text=True)
             logger.info(f"Verified Snow CLI installation: {result.stdout.strip()}")
-            
-            # Install Snowpark extension
-            subprocess.run(["snow", "extension", "install", "snowpark"], check=True)
-            logger.info("Snowpark extension installed successfully")
             
             return True
         except subprocess.SubprocessError as e:
@@ -468,6 +487,27 @@ def deploy_snowpark_projects(root_directory, profile_name, check_git_changes=Fal
         os.environ["SNOWFLAKE_PASSWORD"] = conn_config.get('password', '')
     elif 'private_key_path' in conn_config:
         os.environ["SNOWFLAKE_PRIVATE_KEY_PATH"] = conn_config.get('private_key_path', '')
+        
+    # Try to get the Snow CLI version to determine command format
+    try:
+        version_result = subprocess.run(["snow", "--version"], capture_output=True, text=True)
+        version_output = version_result.stdout.strip()
+        version_str = version_output.split(": ")[-1] if ": " in version_output else version_output
+        version_parts = version_str.split('.')
+        major = int(version_parts[0])
+        minor = int(version_parts[1]) if len(version_parts) > 1 else 0
+        
+        # Set command format based on version
+        if major == 0 and minor < 3:
+            # Old Snow CLI (0.2.x) uses different commands
+            use_legacy_commands = True
+            logger.info("Using legacy Snow CLI commands (v0.2.x)")
+        else:
+            use_legacy_commands = False
+            logger.info("Using modern Snow CLI commands (v0.3+)")
+    except Exception as e:
+        logger.warning(f"Could not determine Snow CLI version: {str(e)}. Will use fallback.")
+        use_legacy_commands = True
     
     # Stats for summary
     projects_found = 0
@@ -528,6 +568,9 @@ def deploy_snowpark_projects(root_directory, profile_name, check_git_changes=Fal
                 # Save current directory
                 current_dir = os.getcwd()
                 
+                # Decide deployment method based on CLI version
+                deployment_successful = False
+                
                 try:
                     # Change to project directory
                     os.chdir(f"{directory_path}")
@@ -537,41 +580,72 @@ def deploy_snowpark_projects(root_directory, profile_name, check_git_changes=Fal
                     for item in os.listdir('.'):
                         logger.info(f"  - {item}")
                     
-                    # Build the project
-                    logger.info("Building project with Snow CLI...")
-                    build_cmd = ["snow", "snowpark", "build", "--temporary-connection", 
-                                "--account", os.environ["SNOWFLAKE_ACCOUNT"], 
-                                "--user", os.environ["SNOWFLAKE_USER"], 
-                                "--role", os.environ["SNOWFLAKE_ROLE"], 
-                                "--warehouse", os.environ["SNOWFLAKE_WAREHOUSE"], 
-                                "--database", os.environ["SNOWFLAKE_DATABASE"]]
-                    
-                    logger.info(f"Executing: {' '.join(build_cmd)}")
-                    build_result = subprocess.run(build_cmd, capture_output=True, text=True)
-                    logger.info(f"Build STDOUT: {build_result.stdout}")
-                    logger.info(f"Build STDERR: {build_result.stderr}")
-                    
-                    # Deploy the project
-                    logger.info("Deploying project with Snow CLI...")
-                    deploy_cmd = ["snow", "snowpark", "deploy", "--replace", "--temporary-connection", 
-                                "--account", os.environ["SNOWFLAKE_ACCOUNT"], 
-                                "--user", os.environ["SNOWFLAKE_USER"], 
-                                "--role", os.environ["SNOWFLAKE_ROLE"], 
-                                "--warehouse", os.environ["SNOWFLAKE_WAREHOUSE"], 
-                                "--database", os.environ["SNOWFLAKE_DATABASE"]]
-                    
-                    logger.info(f"Executing: {' '.join(deploy_cmd)}")
-                    deploy_result = subprocess.run(deploy_cmd, capture_output=True, text=True)
-                    logger.info(f"Deploy STDOUT: {deploy_result.stdout}")
-                    logger.info(f"Deploy STDERR: {deploy_result.stderr}")
-                    
-                    if build_result.returncode != 0 or deploy_result.returncode != 0:
-                        logger.error(f"Failed to deploy project in {directory_path}")
-                        success = False
+                    if use_legacy_commands:
+                        # Legacy Snow CLI (0.2.x) - use native Python UDF deployment
+                        logger.info("Using fallback deployment method for Snow CLI 0.2.x")
+                        
+                        # Get function information from project config
+                        if 'functions' in project_settings.get('snowpark', {}) and project_settings['snowpark']['functions']:
+                            function_config = project_settings['snowpark']['functions'][0]
+                            function_name = function_config.get('name', component_name)
+                            
+                            # Use fallback deployment
+                            if fallback_deploy_udf(conn_config, directory_path, function_name, project_settings):
+                                logger.info(f"Successfully deployed {project_name} using fallback method")
+                                deployment_successful = True
+                                projects_deployed += 1
+                        else:
+                            logger.error("No function definition found in project config")
                     else:
-                        logger.info(f"Successfully deployed project in {directory_path}")
-                        projects_deployed += 1
-                    
+                        # Modern Snow CLI (0.3+) - use snowpark commands
+                        # Build the project
+                        logger.info("Building project with Snow CLI...")
+                        build_cmd = ["snow", "snowpark", "build", "--temporary-connection", 
+                                    "--account", os.environ["SNOWFLAKE_ACCOUNT"], 
+                                    "--user", os.environ["SNOWFLAKE_USER"], 
+                                    "--role", os.environ["SNOWFLAKE_ROLE"], 
+                                    "--warehouse", os.environ["SNOWFLAKE_WAREHOUSE"], 
+                                    "--database", os.environ["SNOWFLAKE_DATABASE"]]
+                        
+                        logger.info(f"Executing: {' '.join(build_cmd)}")
+                        build_result = subprocess.run(build_cmd, capture_output=True, text=True)
+                        logger.info(f"Build STDOUT: {build_result.stdout}")
+                        logger.info(f"Build STDERR: {build_result.stderr}")
+                        
+                        # Deploy the project
+                        logger.info("Deploying project with Snow CLI...")
+                        deploy_cmd = ["snow", "snowpark", "deploy", "--replace", "--temporary-connection", 
+                                    "--account", os.environ["SNOWFLAKE_ACCOUNT"], 
+                                    "--user", os.environ["SNOWFLAKE_USER"], 
+                                    "--role", os.environ["SNOWFLAKE_ROLE"], 
+                                    "--warehouse", os.environ["SNOWFLAKE_WAREHOUSE"], 
+                                    "--database", os.environ["SNOWFLAKE_DATABASE"]]
+                        
+                        logger.info(f"Executing: {' '.join(deploy_cmd)}")
+                        deploy_result = subprocess.run(deploy_cmd, capture_output=True, text=True)
+                        logger.info(f"Deploy STDOUT: {deploy_result.stdout}")
+                        logger.info(f"Deploy STDERR: {deploy_result.stderr}")
+                        
+                        if build_result.returncode != 0 or deploy_result.returncode != 0:
+                            logger.error(f"Failed to deploy project in {directory_path}")
+                            # Try fallback method
+                            logger.info(f"Attempting fallback deployment for {project_name}")
+                            function_name = project_name
+                            if 'functions' in project_settings.get('snowpark', {}) and project_settings['snowpark']['functions']:
+                                function_name = project_settings['snowpark']['functions'][0].get('name', project_name)
+                                
+                            if fallback_deploy_udf(conn_config, directory_path, function_name, project_settings):
+                                logger.info(f"Fallback deployment successful for {project_name}")
+                                deployment_successful = True
+                                projects_deployed += 1
+                        else:
+                            logger.info(f"Successfully deployed project in {directory_path}")
+                            deployment_successful = True
+                            projects_deployed += 1
+                            
+                except Exception as e:
+                    logger.error(f"Error processing project in {directory_path}: {str(e)}")
+                    success = False
                 finally:
                     # Restore original directory
                     os.chdir(current_dir)
