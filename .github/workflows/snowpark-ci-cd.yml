@@ -151,12 +151,12 @@ jobs:
         run: |
           mkdir -p ~/.snowflake/keys
           
-          # Debug the Snowflake account format
-          echo "Using Snowflake account: ${SNOWFLAKE_ACCOUNT}"
-          
           # Store private key correctly from GitHub secrets
           echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > ~/.snowflake/keys/rsa_key.p8
           chmod 600 ~/.snowflake/keys/rsa_key.p8
+          
+          # Debug the Snowflake account format
+          echo "Using Snowflake account: ${SNOWFLAKE_ACCOUNT}"
           
           # Install required packages
           pip install cryptography snowflake-connector-python
@@ -172,6 +172,7 @@ jobs:
           role = "CO2_ROLE_DEV"
           database = "CO2_DB_DEV"
           schema = "RAW_CO2"
+          client_request_mfa_token = false
           
           [prod]
           account = "$SNOWFLAKE_ACCOUNT"
@@ -182,6 +183,7 @@ jobs:
           role = "CO2_ROLE_PROD"
           database = "CO2_DB_PROD"
           schema = "RAW_CO2"
+          client_request_mfa_token = false
           EOF
           
           chmod 600 ~/.snowflake/connections.toml
@@ -271,59 +273,23 @@ jobs:
             
             echo "🔍 Checking for changes in $component_path..."
             
-            # Default to not deploying
-            should_deploy=false
-            
-            # For pull requests, always deploy components
-            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-              echo "Pull request detected - always deploying component"
-              should_deploy=true
-            # For workflow_dispatch, always deploy components
-            elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-              echo "Manual workflow dispatch detected - always deploying component"
-              should_deploy=true
+            # For pull requests or workflow_dispatch, always deploy components
+            if [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+              echo "Pull request or manual dispatch detected - deploying component"
+              # Use our Python deployment script without checking changes
+              PYTHONPATH=$PYTHONPATH:$(pwd) python -u scripts/deployment_files/snowflake_deployer.py deploy --profile $CONN_PROFILE --path "$component_path" --name "$component_name" --type "$component_type"
             else
-              # Check for force_deploy file
-              if [[ -f "$component_path/.force_deploy" ]]; then
-                echo "🔥 Force deploy file found - forcing deployment"
-                should_deploy=true
-              else
-                # For push events, check if component changed in this commit
-                # Get changed files in the most recent commit
-                changed_files=$(git diff --name-only HEAD HEAD~1)
-                echo "Changed files in latest commit:"
-                echo "$changed_files"
-                
-                # Check if any files in the component path changed
-                if echo "$changed_files" | grep -q "$component_path"; then
-                  echo "✅ Changes detected in component"
-                  should_deploy=true
-                else
-                  echo "❌ No changes detected in component"
-                fi
-              fi
+              # For push events, only deploy if component changed
+              echo "Push event detected - only deploying changed components"
+              # Use our Python deployment script with change detection
+              PYTHONPATH=$PYTHONPATH:$(pwd) python -u scripts/deployment_files/snowflake_deployer.py deploy --profile $CONN_PROFILE --path "$component_path" --name "$component_name" --type "$component_type" --check-changes
             fi
             
-            if $should_deploy; then
-              echo "⏳ Deploying $component_name..."
-              
-              # Use our Python deployment script with additional logging
-              PYTHONPATH=$PYTHONPATH:$(pwd) python -u scripts/deployment_files/snowflake_deployer.py deploy --profile $CONN_PROFILE --path "$component_path" --name "$component_name" --type "$component_type"
-              
-              if [ $? -eq 0 ]; then
-                echo "✅ Successfully deployed $component_name"
-                
-                # If force deploy file exists, remove it after successful deployment
-                if [[ -f "$component_path/.force_deploy" ]]; then
-                  echo "Removing force deploy marker"
-                  rm -f "$component_path/.force_deploy"
-                fi
-              else
-                echo "❌ Deploy failed for $component_name"
-                exit 1
-              fi
+            if [ $? -eq 0 ]; then
+              echo "✅ Component $component_name processed successfully"
             else
-              echo "⏭️ Skipping $component_name (no changes detected)"
+              echo "❌ Processing failed for $component_name"
+              exit 1
             fi
           }
           

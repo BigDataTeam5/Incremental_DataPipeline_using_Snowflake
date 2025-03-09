@@ -1,4 +1,7 @@
 snowflake-snowpark-python[pandas]
+snowflake-connector-python>=3.0.0
+logging
+pyarrow>=7.0.0
 snowflake-cli-labs
 python-dotenv
 pytest
