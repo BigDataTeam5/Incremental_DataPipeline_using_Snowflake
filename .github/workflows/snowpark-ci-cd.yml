@@ -25,7 +25,16 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          
+          # Install Poetry for better dependency management
+          pip install poetry
+          
+          # Install from requirements.txt
           pip install -r requirements.txt
+          
+          # Verify Snow CLI installation
+          snow --version
+          snow help | grep snowpark
           
       - name: Set environment variables based on branch
         run: |
@@ -107,8 +116,20 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          
+          # Install Poetry for better dependency management
+          pip install poetry
+          
+          # Install from requirements.txt
           pip install -r requirements.txt
-          pip install snowflake-connector-python pandas
+          
+          # Install Snow CLI and Snowpark extension explicitly
+          pip install snowflake-cli snowflake-cli-labs
+          snow extension install snowpark
+          
+          # Verify Snow CLI installation
+          snow --version
+          snow help | grep snowpark
           
       - name: Set environment variables based on branch
         run: |

@@ -6,6 +6,8 @@ import yaml
 import snowflake.connector
 from pathlib import Path
 import subprocess
+import zipfile
+import tempfile
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -218,9 +220,236 @@ def check_for_changes(directory_path, git_ref='HEAD~1'):
         logger.warning(f"Error checking for changes: {str(e)}. Assuming changes exist.")
         return True  # If we can't determine changes, assume there are changes
 
+def analyze_function_signature(function_file):
+    """Analyze the function signature to determine parameter structure."""
+    try:
+        import re
+        with open(function_file, 'r') as f:
+            content = f.read()
+        
+        # Look for the main function definition
+        signature_match = re.search(r'def\s+main\s*\((.*?)\)', content)
+        if signature_match:
+            params = signature_match.group(1).strip()
+            logger.info(f"Function signature parameters: '{params}'")
+            
+            # Count parameters (excluding session if present)
+            param_list = [p.strip() for p in params.split(',') if p.strip()]
+            
+            # Check if session is a parameter
+            has_session = any(p.strip().startswith('session') for p in param_list)
+            param_count = len(param_list)
+            
+            return {
+                'has_session': has_session,
+                'param_count': param_count,
+                'param_list': param_list
+            }
+    except Exception as e:
+        logger.error(f"Error analyzing function signature: {e}")
+    
+    # Default fallback
+    return {
+        'has_session': False,
+        'param_count': 1,
+        'param_list': ['input_data']
+    }
+
+def zip_directory(source_dir, zip_path):
+    """Create a zip file from a directory."""
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, _, files in os.walk(source_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, source_dir)
+                zipf.write(file_path, arcname)
+
+def fallback_deploy_udf(conn_config, component_path, component_name, project_config=None):
+    """Deploy UDF directly using Snowflake connector when Snow CLI fails."""
+    logger.info(f"Attempting fallback deployment for {component_name}")
+    
+    conn = None
+    try:
+        # Connect to Snowflake
+        conn = create_snowflake_connection(conn_config)
+        cursor = conn.cursor()
+        
+        # Find code directory
+        if os.path.isdir(os.path.join(component_path, component_name.lower().replace(" ", "_"))):
+            code_dir = os.path.join(component_path, component_name.lower().replace(" ", "_"))
+        else:
+            # Look for first directory that might contain the code
+            for item in os.listdir(component_path):
+                if os.path.isdir(os.path.join(component_path, item)):
+                    code_dir = os.path.join(component_path, item)
+                    break
+            else:
+                logger.error(f"Could not find code directory in {component_path}")
+                return False
+
+        # Package the code
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = os.path.join(temp_dir, f"{component_name}.zip")
+            
+            # Check if there's a snowflake.yml to use
+            if project_config:
+                src_dir = os.path.join(component_path, project_config['snowpark'].get('src', ''))
+                if os.path.exists(src_dir) and os.path.isdir(src_dir):
+                    code_dir = src_dir
+                    logger.info(f"Using source directory from config: {code_dir}")
+                
+            # Check and fix UDF function signature if necessary
+            function_file = os.path.join(code_dir, "function.py")
+            signature_info = {'has_session': False, 'param_count': 1, 'param_list': ['input_data']}
+            
+            if os.path.exists(function_file):
+                logger.info(f"Analyzing UDF function signature for {component_name}")
+                signature_info = analyze_function_signature(function_file)
+                logger.info(f"Function analysis: Session={signature_info['has_session']}, "
+                          f"Param Count={signature_info['param_count']}")
+            
+            # Log directory contents
+            logger.info(f"Component directory structure:")
+            for root, dirs, files in os.walk(code_dir):
+                level = root.replace(code_dir, '').count(os.sep)
+                indent = ' ' * 4 * level
+                logger.info(f"{indent}{os.path.basename(root)}/")
+                sub_indent = ' ' * 4 * (level + 1)
+                for f in files:
+                    logger.info(f"{sub_indent}{f}")
+            
+            # Zip the directory
+            zip_directory(code_dir, zip_path)
+            logger.info(f"Created zip file: {zip_path}")
+            
+            # Create temporary stage if it doesn't exist
+            stage_name = f"{conn_config.get('database')}.{conn_config.get('schema')}.DEPLOYMENT_STAGE"
+            logger.info(f"Using stage: {stage_name}")
+            cursor.execute(f"CREATE STAGE IF NOT EXISTS {stage_name}")
+            
+            # Upload to stage
+            upload_query = f"PUT file://{zip_path} @{stage_name}/{component_name.replace(' ', '_')}/ OVERWRITE=TRUE"
+            logger.info(f"Uploading with query: {upload_query}")
+            cursor.execute(upload_query)
+            
+            # Create UDF
+            zip_filename = os.path.basename(zip_path)
+            import_path = f"@{stage_name}/{component_name.replace(' ', '_')}/{zip_filename}"
+            
+            # Determine function signature based on project config or function analysis
+            if project_config and 'functions' in project_config.get('snowpark', {}):
+                # Use signature from project config
+                function_config = project_config['snowpark']['functions'][0]
+                
+                # Build parameters from signature
+                params = []
+                for param in function_config.get('signature', []):
+                    params.append(f"{param['name']} {param['type']}")
+                
+                param_str = ", ".join(params)
+                return_type = function_config.get('returns', 'VARIANT')
+                
+                sql = f"""
+                CREATE OR REPLACE FUNCTION {component_name.replace(' ', '_')}({param_str})
+                RETURNS {return_type}
+                LANGUAGE PYTHON
+                RUNTIME_VERSION=3.8
+                PACKAGES = ('snowflake-snowpark-python')
+                IMPORTS = ('{import_path}')
+                HANDLER = 'function.main'
+                """
+            else:
+                # Use signature from function analysis
+                if signature_info['param_count'] == 1:
+                    sql = f"""
+                    CREATE OR REPLACE FUNCTION {component_name.replace(' ', '_')}(input_data VARIANT)
+                    RETURNS VARIANT
+                    LANGUAGE PYTHON
+                    RUNTIME_VERSION=3.8
+                    PACKAGES = ('snowflake-snowpark-python')
+                    IMPORTS = ('{import_path}')
+                    HANDLER = 'function.main'
+                    """
+                elif signature_info['param_count'] == 2:
+                    sql = f"""
+                    CREATE OR REPLACE FUNCTION {component_name.replace(' ', '_')}(previous_value FLOAT, current_value FLOAT)
+                    RETURNS FLOAT
+                    LANGUAGE PYTHON
+                    RUNTIME_VERSION=3.8
+                    PACKAGES = ('snowflake-snowpark-python')
+                    IMPORTS = ('{import_path}')
+                    HANDLER = 'function.main'
+                    """
+                else:
+                    sql = f"""
+                    CREATE OR REPLACE FUNCTION {component_name.replace(' ', '_')}(input_data VARIANT)
+                    RETURNS VARIANT
+                    LANGUAGE PYTHON
+                    RUNTIME_VERSION=3.8
+                    PACKAGES = ('snowflake-snowpark-python')
+                    IMPORTS = ('{import_path}')
+                    HANDLER = 'function.main'
+                    """
+            
+            logger.info(f"Creating with SQL: {sql}")
+            cursor.execute(sql)
+            
+            logger.info(f"Successfully deployed {component_name} using fallback method")
+            return True
+            
+    except Exception as e:
+        logger.error(f"Error in fallback deployment for {component_name}: {str(e)}")
+        return False
+    
+    finally:
+        if conn:
+            conn.close()
+
+def verify_snow_cli_installation():
+    """Verify Snow CLI is installed and available, install if missing."""
+    try:
+        # Try to check if snow CLI is installed
+        result = subprocess.run(["snow", "--version"], capture_output=True, text=True)
+        logger.info(f"Snow CLI is already installed: {result.stdout.strip()}")
+        
+        # Check if snowpark command is available
+        help_output = subprocess.run(["snow", "help"], capture_output=True, text=True).stdout
+        if "snowpark" not in help_output:
+            logger.warning("Snow CLI is installed but missing 'snowpark' command. Installing Snowpark extension...")
+            # Install Snowpark extension
+            subprocess.run(["snow", "extension", "install", "snowpark"], check=True)
+            logger.info("Snowpark extension installed successfully")
+        
+        return True
+    except (subprocess.SubprocessError, FileNotFoundError):
+        logger.warning("Snow CLI not found. Attempting to install...")
+        
+        try:
+            # Install Snow CLI using pip
+            subprocess.run(["pip", "install", "--upgrade", "snowflake-cli", "snowflake-cli-labs"], check=True)
+            logger.info("Successfully installed Snow CLI via pip")
+            
+            # Verify installation
+            result = subprocess.run(["snow", "--version"], capture_output=True, text=True)
+            logger.info(f"Verified Snow CLI installation: {result.stdout.strip()}")
+            
+            # Install Snowpark extension
+            subprocess.run(["snow", "extension", "install", "snowpark"], check=True)
+            logger.info("Snowpark extension installed successfully")
+            
+            return True
+        except subprocess.SubprocessError as e:
+            logger.error(f"Failed to install Snow CLI: {str(e)}")
+            return False
+
 def deploy_snowpark_projects(root_directory, profile_name, check_git_changes=False, git_ref='HEAD~1'):
     """Deploy all Snowpark projects found in the root directory using Snow CLI."""
     logger.info(f"Deploying all Snowpark apps in root directory {root_directory}")
+    
+    # Ensure Snow CLI is installed
+    if not verify_snow_cli_installation():
+        logger.error("Snow CLI is not available. Cannot proceed with deployment.")
+        return False
     
     # Get connection config for environment variables
     conn_config = get_connection_config(profile_name)
@@ -239,12 +468,6 @@ def deploy_snowpark_projects(root_directory, profile_name, check_git_changes=Fal
         os.environ["SNOWFLAKE_PASSWORD"] = conn_config.get('password', '')
     elif 'private_key_path' in conn_config:
         os.environ["SNOWFLAKE_PRIVATE_KEY_PATH"] = conn_config.get('private_key_path', '')
-    
-    # Check if Snow CLI is available
-    snow_cli_check = os.system("snow --version > /dev/null 2>&1")
-    if snow_cli_check != 0:
-        logger.error("Snow CLI not found or not working properly. Make sure it's installed and in PATH.")
-        return False
     
     # Stats for summary
     projects_found = 0
@@ -268,6 +491,13 @@ def deploy_snowpark_projects(root_directory, profile_name, check_git_changes=Fal
             
         projects_found += 1
         logger.info(f"Found Snowflake project in folder {directory_path}")
+        
+        # Display project file content for debugging
+        try:
+            with open(os.path.join(directory_path, SNOWFLAKE_PROJECT_CONFIG_FILENAME), 'r') as f:
+                logger.info(f"Project config content:\n{f.read()}")
+        except Exception as e:
+            logger.warning(f"Could not read project config: {str(e)}")
 
         # Check if project has changed since last commit
         should_deploy = True
@@ -302,17 +532,40 @@ def deploy_snowpark_projects(root_directory, profile_name, check_git_changes=Fal
                     # Change to project directory
                     os.chdir(f"{directory_path}")
                     
+                    # List directory contents for debugging
+                    logger.info(f"Directory contents of {directory_path}:")
+                    for item in os.listdir('.'):
+                        logger.info(f"  - {item}")
+                    
                     # Build the project
-                    build_cmd = f"snow snowpark build --temporary-connection --account $SNOWFLAKE_ACCOUNT --user $SNOWFLAKE_USER --role $SNOWFLAKE_ROLE --warehouse $SNOWFLAKE_WAREHOUSE --database $SNOWFLAKE_DATABASE"
-                    logger.info(f"Executing: {build_cmd}")
-                    build_result = os.system(build_cmd)
+                    logger.info("Building project with Snow CLI...")
+                    build_cmd = ["snow", "snowpark", "build", "--temporary-connection", 
+                                "--account", os.environ["SNOWFLAKE_ACCOUNT"], 
+                                "--user", os.environ["SNOWFLAKE_USER"], 
+                                "--role", os.environ["SNOWFLAKE_ROLE"], 
+                                "--warehouse", os.environ["SNOWFLAKE_WAREHOUSE"], 
+                                "--database", os.environ["SNOWFLAKE_DATABASE"]]
+                    
+                    logger.info(f"Executing: {' '.join(build_cmd)}")
+                    build_result = subprocess.run(build_cmd, capture_output=True, text=True)
+                    logger.info(f"Build STDOUT: {build_result.stdout}")
+                    logger.info(f"Build STDERR: {build_result.stderr}")
                     
                     # Deploy the project
-                    deploy_cmd = f"snow snowpark deploy --replace --temporary-connection --account $SNOWFLAKE_ACCOUNT --user $SNOWFLAKE_USER --role $SNOWFLAKE_ROLE --warehouse $SNOWFLAKE_WAREHOUSE --database $SNOWFLAKE_DATABASE"
-                    logger.info(f"Executing: {deploy_cmd}")
-                    deploy_result = os.system(deploy_cmd)
+                    logger.info("Deploying project with Snow CLI...")
+                    deploy_cmd = ["snow", "snowpark", "deploy", "--replace", "--temporary-connection", 
+                                "--account", os.environ["SNOWFLAKE_ACCOUNT"], 
+                                "--user", os.environ["SNOWFLAKE_USER"], 
+                                "--role", os.environ["SNOWFLAKE_ROLE"], 
+                                "--warehouse", os.environ["SNOWFLAKE_WAREHOUSE"], 
+                                "--database", os.environ["SNOWFLAKE_DATABASE"]]
                     
-                    if build_result != 0 or deploy_result != 0:
+                    logger.info(f"Executing: {' '.join(deploy_cmd)}")
+                    deploy_result = subprocess.run(deploy_cmd, capture_output=True, text=True)
+                    logger.info(f"Deploy STDOUT: {deploy_result.stdout}")
+                    logger.info(f"Deploy STDERR: {deploy_result.stderr}")
+                    
+                    if build_result.returncode != 0 or deploy_result.returncode != 0:
                         logger.error(f"Failed to deploy project in {directory_path}")
                         success = False
                     else:
@@ -344,15 +597,42 @@ def deploy_component(profile_name, component_path, component_name, component_typ
             logger.info(f"No changes detected in {component_path}. Skipping deployment.")
             return True  # Return success, just skipped
     
+    # Get connection config for fallback deployment if needed
+    conn_config = get_connection_config(profile_name)
+    if conn_config is None:
+        return False
+    
     # Deploy the component
     if should_deploy:
         # Check if component is a Snow CLI project (has snowflake.yml)
-        if os.path.exists(os.path.join(component_path, SNOWFLAKE_PROJECT_CONFIG_FILENAME)):
+        config_file = os.path.join(component_path, SNOWFLAKE_PROJECT_CONFIG_FILENAME)
+        if os.path.exists(config_file):
             logger.info(f"Component {component_name} is a Snow CLI project, deploying with Snow CLI")
-            return deploy_snowpark_projects(component_path, profile_name, False)  # Don't check changes again
+            
+            # Load project config for potential fallback
+            project_config = None
+            try:
+                with open(config_file, 'r') as yamlfile:
+                    project_config = yaml.load(yamlfile, Loader=yaml.FullLoader)
+            except Exception as e:
+                logger.warning(f"Could not load project config: {str(e)}")
+            
+            # Try deploying with Snow CLI first
+            result = deploy_snowpark_projects(component_path, profile_name, False)
+            
+            # If Snow CLI failed, try fallback for UDFs
+            if not result and component_type.lower() == "udf":
+                logger.info(f"Trying fallback deployment for {component_name}")
+                return fallback_deploy_udf(conn_config, component_path, component_name, project_config)
+            
+            return result
         else:
-            logger.error(f"Component {component_name} doesn't appear to be a Snow CLI project")
-            return False
+            logger.warning(f"Component {component_name} doesn't have snowflake.yml, trying fallback deployment")
+            if component_type.lower() == "udf":
+                return fallback_deploy_udf(conn_config, component_path, component_name)
+            else:
+                logger.error(f"Cannot deploy {component_type} without Snow CLI or snowflake.yml")
+                return False
     
     return True
 
