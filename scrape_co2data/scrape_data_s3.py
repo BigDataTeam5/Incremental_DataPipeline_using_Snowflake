@@ -3,8 +3,8 @@ import pandas as pd
 import boto3
 import io
 # AWS S3 Configuration
-AWS_ACCESS_KEY = "AKIA4WJPWIY6YZDSM75N"
-AWS_SECRET_KEY = "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"
+AWS_ACCESS_KEY = ""
+AWS_SECRET_KEY = ""
 S3_BUCKET_NAME = "co2emissionsdata"
 S3_OBJECT_NAME = "co2_daily_mlo.csv"  # File name in S3
 AWS_REGION = "us-east-2"  # e.g., 'us-east-1'
