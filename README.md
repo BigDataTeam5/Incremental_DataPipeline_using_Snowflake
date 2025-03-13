@@ -11,9 +11,10 @@ The pipeline follows a multi-layer data architecture:
 
 1. **Raw Layer** - Contains raw CO2 data loaded directly from source files
 2. **Harmonized Layer** - Standardized data with consistent formatting and data quality checks
-3. **Analytics Layer** - Derived tables with aggregations, metrics, and enriched attributes for an![Snowflake (4)](https://github.com/user-attachments/assets/b01d9f87-9a74-4f0e-b390-efc747da6042)
-alysis
+3. **Analytics Layer** - Derived tables with aggregations, metrics, and enriched attributes for an!
 4. **External Layer** - Storing all the stages and for implementing external access integration and policies for external outbound network call.
+[Snowflake (4)](https://github.com/user-attachments/assets/b01d9f87-9a74-4f0e-b390-efc747da6042)
+alysis
 ### Key Components:
 
 - **Raw Data Ingestion** - Loads CO2 data from S3 into the raw layer
