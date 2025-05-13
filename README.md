@@ -1,220 +1,252 @@
+## CDC pipeline for NOAA CO2 Data in Snowflake using AWS Lambda 
+A comprehensive data pipeline for processing, analyzing, and visualizing CO2 measurement data using Snowflake's modern data stack.
+
+## Project Overview
+
+This project implements an incremental data pipeline that processes CO2 concentration measurements from the Mauna Loa Observatory. The pipeline extracts data from public sources, loads it into Snowflake, and builds harmonized and analytical data layers to enable analysis of CO2 trends over time.
+
+## Architecture
+
+The pipeline follows a multi-layer data architecture:
+
+1. **Raw Layer** - Contains raw CO2 data loaded directly from source files
+2. **Harmonized Layer** - Standardized data with consistent formatting and data quality checks
+3. **Analytics Layer** - Derived tables with aggregations, metrics, and enriched attributes for an!
+4. **External Layer** - Storing all the stages and for implementing external access integration and policies for external outbound network call.
+
+![Snowflake (4)](https://github.com/user-attachments/assets/fc49c7b6-77c8-4e3f-a36f-145011727b87)
 
 
-![co2_pipeline_simplified9 (2)](https://github.com/user-attachments/assets/b083b8be-01b4-4cd0-a95a-8fe5f85aae69)
 
+### Key Components:
 
+- **Raw Data Ingestion** - Loads CO2 data from S3 into the raw layer
+- **Change Data Capture** - Uses Snowflake streams to track changes in the raw data
+- **Harmonization** - Transforms raw data into a consistent format
+- **Analytics Processing** - Calculates trends, aggregations, and derived metrics
+- **UDFs** - Custom functions for CO2 calculations (volatility, daily/weekly changes)
 
-## Prerequisites
+## Technologies
 
-- Snowflake account with ACCOUNTADMIN privileges
-- GitHub account
+- **Snowflake** - Cloud data warehouse
+- **Python** - Primary programming language
+- **Snowpark** - Snowflake's Python API for data processing
+- **GitHub Actions** - CI/CD pipeline
+- **AWS S3** - Data storage for source files
+- **AWS Lambda** - Creating Lambda function with API Gateway for routing network api calls
+- **pytest** - Testing framework
+
+## Setup and Installation
+
+### Prerequisites
+
 - Python 3.10 or later
-- Snowflake CLI (snow) installed
+- Snowflake account
+- AWS account with access to S3 buckets
+- RSA key pair for Snowflake authentication
 
-## Step-by-Step Setup and Execution
+### Local Environment Setup
 
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/[your-username]/snowflake-cicd-lab.git
-cd snowflake-cicd-lab
-```
-
-### 2. Set Up Snowflake Environment
-
-1. Log in to your Snowflake account using ACCOUNTADMIN role
-2. Run the setup script to create necessary Snowflake objects:
+1. Clone the repository:
 
 ```bash
-snowsql -f scripts/setup_snowflake.sql
+git clone https://github.com/BigDataTeam5/Incremental_DataPipleine_using_Snowflake.git
+cd Incremental_DataPipleine_using_Snowflake
 ```
 
-Or execute the script through the Snowflake web UI.
+2. Create and activate a virtual environment using poetry:
+    ### Windows Installation
+    ```
+    # Using PowerShell
+    (Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | python -
+    ```
+    after installing, 
+    ```
+    cd Incremental_DataPipleine_using_Snowflake
+    poetry show
+    ```
+    run any python file along with poetry command
+    ```
+    poetry run python <your_script>.py
+    ```
 
-3. Load the sample data:
+
+
+4. Set up RSA key pair authentication:
 
 ```bash
-snowsql -f scripts/load_sample_data.sql
+mkdir -p ~/.snowflake/keys
+poetry python scripts/rsa_key_pair_authentication/generate_snowflake_keys.py
 ```
 
-### 3. Configure Your Local Environment
+5. Configure Snowflake connection by creating `~/.snowflake/connections.toml`:
 
-1. Install required Python packages:
+```toml
+[dev]
+account = "your-account"
+user = "your-username"
+password= "your-password"
+private_key_path = "~/.snowflake/keys/rsa_key.p8"
+warehouse = "CO2_WH_DEV"
+role = "CO2_ROLE_DEV"
+database = "CO2_DB_DEV"
+schema = "RAW_CO2"
+client_request_mfa_token = false
+
+[prod]
+account = "your-account"
+user = "your-username"
+password= "your-password"
+private_key_path = "~/.snowflake/keys/rsa_key.p8"
+warehouse = "CO2_WH_PROD"
+role = "CO2_ROLE_PROD"
+database = "CO2_DB_PROD"
+schema = "RAW_CO2"
+client_request_mfa_token = false
+```
+
+6. Create a `.env` file with the following variables:
+
+```
+AWS_ACCESS_KEY=<your-access-key>
+AWS_SECRET_KEY=<your-secret-key>
+AWS_REGION=<your-region>
+S3_BUCKET_NAME=noa-co2-datapipeline
+PARENT_FOLDER=noaa-co2-data
+SNOWFLAKE_ENV=dev
+```
+
+7. Create a `templates/environment.json` file:
+
+```json
+{
+    "environment": "dev"
+}
+```
+
+### Snowflake Setup
+
+1. Register the public key with your Snowflake user:
+
+```sql
+ALTER USER YourUsername SET RSA_PUBLIC_KEY='<public-key-string>';
+```
+
+2. Create required Snowflake resources:
 
 ```bash
-pip install -r src/data_masker/requirements.txt
-pip install pytest snowflake-cli-labs pyyaml
+poetry run python scripts/deployment_files/snowflake_deployer.py sql --profile dev --file scripts/setup_dev.sql
 ```
 
-2. Set Snowflake connection environment variables:
+## Project Structure
+
+```
+Incremental_DataPipleine_using_Snowflake/
+├── .github/workflows/          # CI/CD workflows
+├── scripts/                    # Utility scripts
+│   ├── deployment_files/       # Deployment automation
+│   ├── raw data loading/       # Data ingestion scripts
+│   └── rsa_key_pair_authentication/  # Authentication utilities
+├── templates/                  # Configuration templates
+├── tests/                      # Test suite
+├── udfs_and_spoc/              # User-Defined Functions and Stored Procedures
+│   ├── co2_analytical_sp/      # Analytics stored procedure
+│   ├── co2_harmonized_sp/      # Harmonization stored procedure
+│   ├── daily_co2_changes/      # UDF for daily CO2 changes
+│   ├── loading_co2_data_sp/    # Data loading stored procedure
+│   ├── python_udf/             # Custom Python UDFs
+│   └── weekly_co2_changes/     # UDF for weekly CO2 changes
+├── .env                        # Environment variables (not in repo)
+├── deployment_and_key_workflow.md  # Deployment documentation
+├── pyproject.toml              # Project metadata and dependencies
+├── pytest.ini                  # pytest configuration
+├── README.md                   # This file
+├── requirements.txt            # Python dependencies
+└── rsa_key_pair_generator.md   # RSA key setup instructions
+```
+
+## Usage
+
+### Loading Raw Data
 
 ```bash
-export SNOWFLAKE_ACCOUNT="your-account-identifier"
-export SNOWFLAKE_USER="your-username"
-export SNOWFLAKE_PASSWORD="your-password"
-export SNOWFLAKE_ROLE="CICD_LAB_ROLE"
-export SNOWFLAKE_WAREHOUSE="CICD_LAB_WH"
+poetry run python scripts/raw\ data\ loading\ and\ stream\ creation/raw_co2_data.py
 ```
 
-### 4. Run Unit Tests Locally
+### Creating Streams for Change Data Capture
 
 ```bash
-pytest tests/test_data_masker.py -v
+poetry run python scripts/raw\ data\ loading\ and\ stream\ creation/02_create_rawco2data_stream.py
 ```
 
-### 5. Deploy Manually to Development Environment
+### Running Tests
 
 ```bash
-python deploy_snowpark_app.py --env dev
+pytest tests/
 ```
 
-### 6. Test the UDF in Snowflake
+### Deploying Components to Snowflake
 
-Execute the test script in Snowflake:
-
+Deploy all components:
 ```bash
-snowsql -f scripts/test_udf.sql
+poetry run python scripts/deployment_files/snowflake_deployer.py deploy-all --profile dev --path udfs_and_spoc --check-changes
 ```
 
-Or through the Snowflake web UI.
+Deploy a specific component:
+```bash
+python scripts/deployment_files/snowflake_deployer.py deploy --profile dev --path udfs_and_spoc/co2_harmonized_sp --name HARMONIZE_CO2_DATA --type procedure
+```
 
-### 7. Configure GitHub Actions for CI/CD
+## Data Flow
 
-1. Fork this repository if you haven't already
-2. In your GitHub repository, go to Settings > Secrets and Variables > Actions
-3. Add the following repository secrets:
-   - `SNOWFLAKE_ACCOUNT`: Your Snowflake account identifier
-   - `SNOWFLAKE_USER`: Your Snowflake username
-   - `SNOWFLAKE_PASSWORD`: Your Snowflake password
-   - `SNOWFLAKE_ROLE`: CICD_LAB_ROLE
-   - `SNOWFLAKE_WAREHOUSE`: CICD_LAB_WH
+1. **Data Ingestion**: CO2 data is loaded from S3 into the RAW_CO2 schema
+2. **Change Detection**: Snowflake streams track changes in raw data
+3. **Harmonization**: The HARMONIZE_CO2_DATA stored procedure transforms raw data into the harmonized layer
+4. **Analytics**: The ANALYZE_CO2_DATA stored procedure creates analytical tables and views
+5. **User Access**: End users query the analytics layer for insights
 
-### 8. Experience the CI/CD Pipeline
+## Authentication
 
-The CI/CD pipeline is triggered automatically when you push to the repository:
-- Pushing to the `dev` branch deploys to the development environment
-- Pushing to the `main` branch deploys to the production environment
+The project uses RSA key pair authentication for secure, MFA-free deployments to Snowflake:
 
+1. Generate RSA key pair using the provided scripts
+2. Register the public key with your Snowflake user
+3. Configure the connection profile to use the private key
+4. Store the private key securely in GitHub secrets for CI/CD
 
-### Step-by-Step Workflow
-🟢 Step 1: Data Ingestion (Raw Data Collection)
-✅ Fetch CO₂ data from NOAA:
+For detailed instructions, see `rsa_key_pair_generator.md` and `deployment_and_key_workflow.md`.
 
-Download daily CO₂ levels from NOAA’s Mauna Loa Observatory.
+## CI/CD Pipeline
 
-Clean, validate, and parse the data.
+The GitHub Actions workflow automates:
 
-✅ Store data in AWS S3:
-
-Organize raw data into folders by year (s3://co2-bucket/YYYY/co2_daily.csv).
-
-Upload the cleaned data using Boto3 (AWS SDK for Python).
-
-✅ Load data into Snowflake:
-
-Use COPY INTO to ingest data into RAW_CO2.CO2_DATA.
-
-Enable incremental tracking via Snowflake Streams (CO2_DATA_STREAM).
-
-🔵 Step 2: Data Harmonization (Transforming & Normalizing)
-✅ Create a harmonized table:
-
-Define HARMONIZED_CO2.harmonized_co2 schema.
-
-Convert ppm values to metric tons.
-
-✅ Merge new data using Snowflake Streams & Tasks:
-
-Use CO2_HARMONIZED_TASK for merging new records.
-
-Ensure incremental updates via SYSTEM$STREAM_HAS_DATA.
-
-✅ Store processed data:
-
-Maintain a structured and cleaned dataset in HARMONIZED_CO2.
-
-🟠 Step 3: Analytics & Insights
-✅ Compute key CO₂ metrics using UDFs:
-
-Daily Percent Change (co2_percent_change_udf.py)
-
-Volatility Analysis (co2_volatility_udf.py)
-
-Trend Forecasting (ML-based models)
-
-✅ Generate analytics tables:
-
-Store insights in ANALYTICS_CO2.DAILY_CO2_METRICS.
-
-Apply unit conversion functions (ppm → metric tons).
-
-✅ Enable real-time dashboards & API access:
-
-Provide Snowflake APIs for reporting.
-
-Generate CO₂ monitoring dashboards.
-
-🟣 Step 4: Automation & Deployment
-✅ Automate Pipeline Execution in Snowflake:
-
-Schedule Daily Task Execution (2 AM UTC).
-
-Run CO2_HARMONIZED_TASK to update harmonized data.
-
-Run CO2_ANALYTICS_TASK to refresh analytics tables.
-
-✅ Enable CI/CD pipeline using GitHub Actions:
-
-Automate deployment of Snowpark-based AI models.
-
-Push updates to forecasting & anomaly detection models.
-
-📌 Diagram Representation
-The CO₂ Emissions Data Pipeline is visually represented in the following diagram:
-
-(Refer to co2_pipeline_simplified.png for the architecture overview.)
-
-🚀 How to Run the Pipeline
-Set up AWS credentials in .env or use IAM roles.
-
-Configure Snowflake credentials for secure access.
-
-Run the ingestion script to fetch & store NOAA data.
-
-Trigger Snowflake tasks to harmonize & process data.
-Automate execution using GitHub Actions for daily processing.
-
-
-🛠️ Technologies Used
-AWS S3 (Storage)
-
-Snowflake (Data Warehousing)
-
-Python & Boto3 (Data Processing)
-
-Snowpark (Machine Learning Models)
-
-GitHub Actions (CI/CD Automation)
-
-Streamlit / Power BI (Dashboards)
-
-📧 Contact & Support
-For any queries, f
+1. Testing of all components
+2. Deployment to dev/prod environments based on branch
+3. Key-based authentication to Snowflake
+4. Validation of code quality and functionality
 
 ## Troubleshooting
 
-- **Authentication Issues**: Verify your Snowflake credentials are correctly set
-- **Permission Errors**: Ensure the CICD_LAB_ROLE has all required privileges
-- **Deployment Failures**: Check the GitHub Actions logs for detailed errors
-- **Testing Errors**: Confirm your Python environment has all dependencies installed
+Common issues and solutions:
 
-## Resources
+- **Authentication Errors**: Verify key permissions and format
+- **Deployment Failures**: Check function signatures and parameter counts
+- **Connection Issues**: Run `poetry run python scripts/deployment_files/check_connections_file.py` to validate your connections.toml
 
-- [Snowflake Documentation](https://docs.snowflake.com/)
-- [Snowpark Python Developer Guide](https://docs.snowflake.com/en/developer-guide/snowpark/python/index.html)
-- [Snowflake CLI Documentation](https://docs.snowflake.com/en/developer-guide/snowflake-cli/index.html)
-- [GitHub Actions Documentation](https://docs.github.com/en/actions)
+## Contributing
 
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run tests to ensure functionality
+5. Submit a pull request
+https://codelabs-preview.appspot.com/?file_id=18zcpbkzP3rvFD5bXkMybKJEIyr9HutwhhFf42tZ79WU#10
 ## License
+DEMO : https://northeastern-my.sharepoint.com/personal/mate_r_northeastern_edu/_layouts/15/stream.aspx?id=%2Fpersonal%2Fmate%5Fr%5Fnortheastern%5Fedu%2FDocuments%2FRecordings%2FBIG%5FDATA%5FSCRUM%2D20250228%5F033103%2DMeeting%20Recording%2Emp4&referrer=StreamWebApp%2EWeb&referrerScenario=AddressBarCopied%2Eview%2E024b8bc6%2Dda41%2D4b73%2Dbf8a%2Dffb1678a5277
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+[Specify your license here]
+
+## Acknowledgments
+
+- NOAA for providing the CO2 measurement data
+- Snowflake for the data warehousing platform
