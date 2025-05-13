@@ -49,6 +49,13 @@ def create_analytics_tables(session: Session) -> str:
     """
     current_warehouse = None
     try:
+        # Get current database from session
+        current_database = session.get_current_database()
+        print(f"Current database: {current_database}")
+        
+        # Use the current database instead of hardcoding CO2_DB_DEV
+        db_prefix = current_database
+        
         # Get current warehouse from session for dynamic operations
         current_warehouse = session.get_current_warehouse()
         if not current_warehouse:
@@ -65,28 +72,97 @@ def create_analytics_tables(session: Session) -> str:
         # Scale warehouse up for performance
         session.sql(f"ALTER WAREHOUSE {current_warehouse} SET WAREHOUSE_SIZE = LARGE WAIT_FOR_COMPLETION = TRUE").collect()
         print(f"Warehouse {current_warehouse} scaled up to LARGE")
+        
+        # First, create the needed UDFs if they don't exist
+        print("Creating UDFs if they don't exist...")
+        
+        # Create NORMALIZE_CO2_UDF
+        session.sql(f"""
+        CREATE OR REPLACE FUNCTION {db_prefix}.ANALYTICS_CO2.NORMALIZE_CO2_UDF(value FLOAT, min_val FLOAT, max_val FLOAT)
+        RETURNS FLOAT
+        AS
+        $$
+            CASE
+                WHEN max_val = min_val THEN 0.5
+                ELSE (value - min_val) / (max_val - min_val)
+            END
+        $$
+        """).collect()
+        print(f"Created {db_prefix}.ANALYTICS_CO2.NORMALIZE_CO2_UDF")
+        
+        # Create CALCULATE_CO2_VOLATILITY
+        session.sql(f"""
+        CREATE OR REPLACE FUNCTION {db_prefix}.ANALYTICS_CO2.CALCULATE_CO2_VOLATILITY(current_value FLOAT, previous_value FLOAT)
+        RETURNS FLOAT
+        AS
+        $$
+            CASE
+                WHEN previous_value IS NULL OR previous_value = 0 THEN 0
+                WHEN current_value IS NULL THEN 0
+                ELSE ABS(current_value - previous_value) / previous_value
+            END
+        $$
+        """).collect()
+        print(f"Created {db_prefix}.ANALYTICS_CO2.CALCULATE_CO2_VOLATILITY")
+        
+        # Create CO2_DAILY_PERCENT_CHANGE
+        session.sql(f"""
+        CREATE OR REPLACE FUNCTION {db_prefix}.ANALYTICS_CO2.CO2_DAILY_PERCENT_CHANGE(current_value FLOAT, previous_value FLOAT)
+        RETURNS FLOAT
+        AS
+        $$
+            CASE
+                WHEN previous_value IS NULL OR previous_value = 0 THEN 0
+                WHEN current_value IS NULL THEN 0
+                ELSE (current_value - previous_value) / previous_value * 100
+            END
+        $$
+        """).collect()
+        print(f"Created {db_prefix}.ANALYTICS_CO2.CO2_DAILY_PERCENT_CHANGE")
+        
+        # Create CO2_WEEKLY_PERCENT_CHANGE
+        session.sql(f"""
+        CREATE OR REPLACE FUNCTION {db_prefix}.ANALYTICS_CO2.CO2_WEEKLY_PERCENT_CHANGE(previous_value FLOAT, current_value FLOAT)
+        RETURNS FLOAT
+        AS
+        $$
+            CASE
+                WHEN previous_value IS NULL OR previous_value = 0 THEN 0
+                WHEN current_value IS NULL THEN 0
+                ELSE (current_value - previous_value) / previous_value * 100
+            END
+        $$
+        """).collect()
+        print(f"Created {db_prefix}.ANALYTICS_CO2.CO2_WEEKLY_PERCENT_CHANGE")
 
         # Create a simpler daily analytics table without UDF calls initially
         print("Creating simplified daily analytics table...")
         daily_sql = f"""
-        CREATE OR REPLACE TABLE ANALYTICS_CO2.DAILY_ANALYTICS AS
+        CREATE OR REPLACE TABLE {db_prefix}.ANALYTICS_CO2.DAILY_ANALYTICS AS
         SELECT
             DATE,
             YEAR,
             MONTH AS MONTH_NUM,
             DAY,
             ROUND(CO2_PPM, 3) AS CO2_PPM,
+            ROUND({db_prefix}.ANALYTICS_CO2.NORMALIZE_CO2_UDF(CO2_PPM,
+            MIN(CO2_PPM) OVER (),
+            MAX(CO2_PPM) OVER ()), 3) AS NORMALIZED_CO2,
+            ROUND({db_prefix}.ANALYTICS_CO2.CALCULATE_CO2_VOLATILITY(CO2_PPM,
+            LAG(CO2_PPM) OVER (ORDER BY DATE)), 3) AS DAILY_VOLATILITY,
+            ROUND({db_prefix}.ANALYTICS_CO2.CO2_DAILY_PERCENT_CHANGE(CO2_PPM,
+            LAG(CO2_PPM) OVER (ORDER BY DATE)), 3) AS DAILY_PERCENTAGE_CHANGE,
             DAYNAME(DATE) AS DAY_OF_WEEK,
             MONTHNAME(DATE) AS MONTH_NAME
-        FROM HARMONIZED_CO2.HARMONIZED_CO2
+        FROM {db_prefix}.HARMONIZED_CO2.HARMONIZED_CO2
         """
         session.sql(daily_sql).collect()
-        print("Created DAILY_ANALYTICS table")
+        print(f"Created {db_prefix}.ANALYTICS_CO2.DAILY_ANALYTICS table")
 
         # Try adding a derived column with simple calculations (no UDFs)
         print("Adding derived columns...")
         session.sql(f"""
-        CREATE OR REPLACE TABLE ANALYTICS_CO2.DAILY_CO2_STATS AS
+        CREATE OR REPLACE TABLE {db_prefix}.ANALYTICS_CO2.DAILY_CO2_STATS AS
         SELECT
             DATE,
             CO2_PPM,
@@ -96,27 +172,59 @@ def create_analytics_tables(session: Session) -> str:
                     ROUND(((CO2_PPM - LAG(CO2_PPM) OVER (ORDER BY DATE)) / LAG(CO2_PPM) OVER (ORDER BY DATE)) * 100, 3)
                 ELSE NULL
             END AS PERCENT_CHANGE
-        FROM HARMONIZED_CO2.HARMONIZED_CO2
+        FROM {db_prefix}.HARMONIZED_CO2.HARMONIZED_CO2
         """).collect()
-        print("Created DAILY_CO2_STATS table")
+        print(f"Created {db_prefix}.ANALYTICS_CO2.DAILY_CO2_STATS table")
 
         # Create a simple weekly summary table
         print("Creating weekly summary table...")
         session.sql(f"""
-        CREATE OR REPLACE TABLE ANALYTICS_CO2.WEEKLY_CO2_SUMMARY AS
-        SELECT
+        CREATE OR REPLACE TABLE {db_prefix}.ANALYTICS_CO2.WEEKLY_ANALYTICS AS
+        WITH weekly_base AS (
+          SELECT
             DATE_TRUNC('WEEK', DATE) AS WEEK_START,
-            AVG(CO2_PPM) AS AVG_WEEKLY_CO2,
-            MIN(CO2_PPM) AS MIN_WEEKLY_CO2,
-            MAX(CO2_PPM) AS MAX_WEEKLY_CO2,
-            COUNT(*) AS MEASUREMENTS_PER_WEEK
-        FROM HARMONIZED_CO2.HARMONIZED_CO2
-        GROUP BY WEEK_START
-        ORDER BY WEEK_START
+            DATE,
+            CO2_PPM,
+            {db_prefix}.ANALYTICS_CO2.CALCULATE_CO2_VOLATILITY(
+              CO2_PPM,
+              LAG(CO2_PPM) OVER (PARTITION BY DATE_TRUNC('WEEK', DATE) ORDER BY DATE)
+            ) AS DAILY_VOLATILITY
+          FROM {db_prefix}.HARMONIZED_CO2.HARMONIZED_CO2
+        ),
+        weekly_with_rn AS (
+          SELECT
+            WEEK_START,
+            CO2_PPM,
+            DAILY_VOLATILITY,
+            ROW_NUMBER() OVER (PARTITION BY WEEK_START ORDER BY DATE DESC) AS rn
+          FROM weekly_base
+        ),
+        weekly_rollup AS (
+          SELECT
+            WEEK_START,
+            MAX(CASE WHEN rn = 1 THEN CO2_PPM END) AS LAST_CO2,
+            AVG(DAILY_VOLATILITY) AS WEEKLY_VOLATILITY
+          FROM weekly_with_rn
+          GROUP BY WEEK_START
+        )
+        SELECT
+          WEEK_START,
+          ROUND(LAST_CO2, 3) AS WEEKLY_CO2,
+          ROUND(WEEKLY_VOLATILITY, 3) AS WEEKLY_VOLATILITY,
+          ROUND({db_prefix}.ANALYTICS_CO2.NORMALIZE_CO2_UDF(
+              LAST_CO2,
+              MIN(LAST_CO2) OVER (),
+              MAX(LAST_CO2) OVER ()
+            ), 3) AS NORMALIZED_CO2,
+          ROUND({db_prefix}.ANALYTICS_CO2.CO2_WEEKLY_PERCENT_CHANGE(
+            LAG(LAST_CO2) OVER (ORDER BY WEEK_START),
+            LAST_CO2
+          ), 3) AS WEEKLY_PERCENTAGE_CHANGE
+        FROM weekly_rollup
         """).collect()
-        print("Created WEEKLY_CO2_SUMMARY table")
+        print(f"Created {db_prefix}.ANALYTICS_CO2.WEEKLY_ANALYTICS table")
 
-        return "Simplified analytics tables created successfully."
+        return f"Analytics tables created successfully in {db_prefix} database."
     except Exception as e:
         print(f"Error creating analytics tables: {str(e)}")
         return f"Error: {str(e)}"
@@ -128,6 +236,7 @@ def create_analytics_tables(session: Session) -> str:
                 print(f"Warehouse {current_warehouse} scaled down to XSMALL")
         except Exception as scaling_error:
             print(f"Warning: Failed to scale down warehouse: {str(scaling_error)}")
+            
 def main(session: Session) -> str:
     """Main function to be called by the stored procedure."""
     return create_analytics_tables(session)
