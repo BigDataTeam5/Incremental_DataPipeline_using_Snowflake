@@ -10,7 +10,7 @@ load_dotenv('.env')
 # Get the directory of the current script
 current_dir = os.path.dirname(os.path.abspath(__file__))
 # Go up one level to reach the project root
-project_root = os.path.dirname(current_dir)
+project_root = os.path.dirname(os.path.dirname(current_dir))
 # Build the path to environment.json
 env_file_path = os.path.join(project_root, "templates", "environment.json")
 

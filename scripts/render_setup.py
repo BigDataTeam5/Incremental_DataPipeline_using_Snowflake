@@ -6,21 +6,6 @@ from jinja2 import Environment, FileSystemLoader
 from dotenv import load_dotenv
 import json
 
-def update_environment(env):
-    # Get the base directory (project root)
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    
-    # Create the templates directory if it doesn't exist
-    templates_dir = os.path.join(base_dir, "templates")
-    os.makedirs(templates_dir, exist_ok=True)
-    
-    # Write environment to JSON file
-    env_file_path = os.path.join(templates_dir, "environment.json")
-    data = {"environment": env}
-    with open(env_file_path, "w", encoding="utf-8") as json_file:
-        json.dump(data, json_file, indent=4)
-    print(f"Environment set to: {env}")
-    print(f"Environment file created at: {env_file_path}")
 def render_templates(env_name):
     """
     Render all templates for the specified environment.
@@ -56,6 +41,10 @@ def render_templates(env_name):
         {
             "template": "orchestrate_tasks.sql.j2",
             "output": f"orchestrate_tasks_{env_name}.sql"
+        },
+        {
+            "template": "table_grants.sql.j2",
+            "output": f"table_grants_{env_name}.sql"
         }
     ]
     
@@ -86,10 +75,28 @@ def render_templates(env_name):
         print(f"Generated {template_info['output']} for {env_name.upper()} environment")
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: poetry run python scripts/render_setup.py <environment>")
-        sys.exit(1)
+    # Get the base directory (project root)
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    env_file_path = os.path.join(base_dir, "templates", "environment.json")
     
-    environment = sys.argv[1]
-    update_environment(environment)
-    render_templates(environment)
+    try:
+        # Read environment from JSON file
+        with open(env_file_path, "r") as json_file:
+            env_config = json.load(json_file)
+            env_name = env_config.get("environment", "").lower()
+            
+        if not env_name:
+            raise ValueError("Environment not set in environment.json")
+            
+        print(f"Using environment from file: {env_name}")
+        render_templates(env_name)
+        
+    except FileNotFoundError:
+        print(f"ERROR: environment.json not found at {env_file_path}")
+        sys.exit(1)
+    except json.JSONDecodeError:
+        print(f"ERROR: Invalid JSON in environment.json")
+        sys.exit(1)
+    except Exception as e:
+        print(f"ERROR: {str(e)}")
+        sys.exit(1)

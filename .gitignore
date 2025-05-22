@@ -9,6 +9,8 @@ src/data_masker/requirements.snowflake.txt
 venv/
 setup_dev.sql
 setup_prod.sql
+table_grants_dev.sql
+table_grants_prod.sql
 src/data_masker/.vscode/settings.json
 .zip
 orchestrate_tasks_dev.sql

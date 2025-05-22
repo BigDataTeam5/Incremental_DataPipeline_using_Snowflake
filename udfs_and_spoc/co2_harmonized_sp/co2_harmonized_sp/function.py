@@ -71,6 +71,25 @@ def create_harmonized_table(session: Session):
     session.sql(create_table_sql).collect()
     print("Table harmonized_co2 created in schema HARMONIZED_CO2.")
 
+def create_co2_minmax_table(session: Session) -> bool:
+    """
+    Creates a temporary table with minimum and maximum CO2 PPM values
+    from the harmonized table for efficient UDF calls.
+    """
+    try:
+        print("Creating temporary _CO2_MINMAX table...")
+        session.sql("""
+        CREATE OR REPLACE TABLE ANALYTICS_CO2._CO2_MINMAX AS
+        SELECT 
+            MIN(CO2_PPM) AS MIN_CO2,
+            MAX(CO2_PPM) AS MAX_CO2
+        FROM HARMONIZED_CO2.HARMONIZED_CO2
+        """).collect()               
+        return True
+    except Exception as e:
+        print(f"Error creating _CO2_MINMAX table: {str(e)}")
+        return False
+
 def merge_raw_into_harmonized(session: Session) -> bool:
     """
     Merges new records from the existing stream (CO2_DATA_STREAM) into the harmonized_co2 table.
@@ -159,9 +178,13 @@ def main(session: Session) -> str:
 
         success = merge_raw_into_harmonized(session)
         if success:
-            return "CO2_HARMONIZED_SP: Raw → Harmonized merge complete!"
+            min_max_sucess = create_co2_minmax_table(session)
+            if min_max_sucess:
+                return "CO2_HARMONIZED_SP: Raw + Harmonized data merge complete and _CO2_MINMAX table created."
+            else:
+                return "CO2_HARMONIZED_SP: Raw + Harmonized data merge complete but _CO2_MINMAX table creation failed."
         else:
-            return "CO2_HARMONIZED_SP: Error during merge operation"
+            return "CO2_HARMONIZED_SP: Raw + Harmonized data merge failed."            
     except Exception as e:
         import traceback
         tb_str = traceback.format_exc()

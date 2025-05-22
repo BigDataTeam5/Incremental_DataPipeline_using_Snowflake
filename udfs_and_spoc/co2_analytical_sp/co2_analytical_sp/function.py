@@ -1,6 +1,7 @@
 import os
 from snowflake.snowpark import Session
 import snowflake.snowpark.functions as F
+from snowflake.snowpark.window import Window
 from dotenv import load_dotenv
 import json
 import sys
@@ -42,201 +43,213 @@ else:
 connection_name = env
 print(f"Using Snowflake connection profile: {connection_name}")
 
+
+def table_exists(session, schema='', name=''):
+    """Check if a table exists in the specified schema."""
+    exists = session.sql(
+        f"SELECT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{name}') AS TABLE_EXISTS"
+    ).collect()[0]['TABLE_EXISTS']
+    return exists
+
+def create_daily_stats_table(session):
+    """Create the daily CO2 stats table with proper schema definition."""
+    print("Creating DAILY_CO2_STATS table...")
+    session.sql("""
+    CREATE OR REPLACE TABLE ANALYTICS_CO2.DAILY_CO2_STATS (
+        DATE DATE,
+        CO2_PPM FLOAT,
+        PREV_DAY_CO2 FLOAT,
+        DAILY_CHANGE FLOAT,
+        DAILY_VOLATILITY FLOAT,
+        NORMALIZED_CO2 FLOAT,
+        META_UPDATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+    )
+    """).collect()
+
+def create_weekly_stats_table(session):
+    """Create the weekly CO2 stats table with proper schema definition."""
+    print("Creating WEEKLY_CO2_STATS table...")
+    session.sql("""
+    CREATE OR REPLACE TABLE ANALYTICS_CO2.WEEKLY_CO2_STATS (
+        WEEK_START DATE,
+        AVG_WEEKLY_CO2 FLOAT,
+        WEEK_START_CO2 FLOAT,
+        WEEK_END_CO2 FLOAT,
+        WEEKLY_CHANGE FLOAT,
+        WEEKLY_VOLATILITY FLOAT,
+        NORMALIZED_WEEKLY_CO2 FLOAT,
+        META_UPDATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+    )
+    """).collect()
+
+def process_daily_metrics(session):
+    """Process daily metrics using Snowpark DataFrame API instead of raw SQL."""
+    current_warehouse = session.get_current_warehouse()
+    try:
+        # Scale warehouse up for better performance
+        if current_warehouse:
+            session.sql(f"ALTER WAREHOUSE {current_warehouse} SET WAREHOUSE_SIZE = LARGE WAIT_FOR_COMPLETION = TRUE").collect()
+        
+        print("Processing daily CO2 metrics...")
+        
+        # First, try to access the temporary _CO2_MINMAX table created by harmonized procedure
+        try:
+            minmax_df = session.sql("SELECT * FROM ANALYTICS_CO2._CO2_MINMAX").collect()
+            min_co2 = minmax_df[0]["MIN_CO2"]
+            max_co2 = minmax_df[0]["MAX_CO2"]
+            print(f"Found _CO2_MINMAX table with MIN_CO2={min_co2}, MAX_CO2={max_co2}")
+        except Exception as e:
+            print(f"Could not access temporary _CO2_MINMAX table: {e}")
+        
+        # Get source data
+        source_df = session.table("HARMONIZED_CO2.HARMONIZED_CO2")
+        
+        # Create a DataFrame with calculated metrics
+        daily_df = source_df.select(
+            F.col("DATE"),
+            F.col("CO2_PPM"),
+            F.lag(F.col("CO2_PPM")).over(Window.order_by(F.col("DATE"))).alias("PREV_DAY_CO2")
+        )
+        
+        # Apply UDFs to create final DataFrame
+        result_df = daily_df.select(
+            F.col("DATE"),
+            F.col("CO2_PPM"),
+            F.col("PREV_DAY_CO2"),
+            F.call_udf("ANALYTICS_CO2.CO2_DAILY_PERCENT_CHANGE", F.col("PREV_DAY_CO2"), F.col("CO2_PPM")).alias("DAILY_CHANGE"),
+            F.call_udf("ANALYTICS_CO2.CALCULATE_CO2_VOLATILITY", F.col("CO2_PPM"), F.col("PREV_DAY_CO2")).alias("DAILY_VOLATILITY"),
+            F.lit(min_co2).alias("MIN_CO2"),
+            F.lit(max_co2).alias("MAX_CO2"),
+            F.call_udf("ANALYTICS_CO2.NORMALIZE_CO2_UDF", F.col("CO2_PPM"), F.lit(min_co2), F.lit(max_co2)).alias("NORMALIZED_CO2"),
+            F.current_timestamp().alias("META_UPDATED_AT")
+        )
+        
+        # Merge the data into the target table
+        target_df = session.table("ANALYTICS_CO2.DAILY_CO2_STATS")
+        
+        # Define update dictionary
+        cols_to_update = {c: result_df[c] for c in result_df.schema.names if c != "MIN_CO2" and c != "MAX_CO2"}
+        
+        # Perform the merge operation
+        target_df.merge(
+            result_df,
+            (target_df["DATE"] == result_df["DATE"]),
+            [
+                F.when_matched().update(cols_to_update),
+                F.when_not_matched().insert(cols_to_update)
+            ]
+        )
+        
+        print("Daily CO2 metrics processed successfully")
+        
+    except Exception as e:
+        print(f"Error processing daily metrics: {str(e)}")
+        raise
+    finally:
+        # Scale warehouse back down
+        if current_warehouse:
+            session.sql(f"ALTER WAREHOUSE {current_warehouse} SET WAREHOUSE_SIZE = XSMALL").collect()
+
+def process_weekly_metrics(session):
+    """Process weekly metrics using Snowpark DataFrame API."""
+    current_warehouse = session.get_current_warehouse()
+    try:
+        if current_warehouse:
+            session.sql(f"ALTER WAREHOUSE {current_warehouse} SET WAREHOUSE_SIZE = LARGE WAIT_FOR_COMPLETION = TRUE").collect()
+        
+        print("Processing weekly CO2 metrics...")
+        
+        # First, try to access the min/max values (reuse the same code as in daily metrics)
+        try:
+            minmax_df = session.sql("SELECT * FROM _CO2_MINMAX").collect()
+            min_co2 = minmax_df[0]["MIN_CO2"]
+            max_co2 = minmax_df[0]["MAX_CO2"]
+        except Exception as e:
+            try:
+                minmax_df = session.sql("SELECT * FROM HARMONIZED_CO2._CO2_MINMAX").collect()
+                min_co2 = minmax_df[0]["MIN_CO2"]
+                max_co2 = minmax_df[0]["MAX_CO2"]
+            except Exception as e2:
+                minmax_sql = session.sql("SELECT MIN(CO2_PPM) AS MIN_CO2, MAX(CO2_PPM) AS MAX_CO2 FROM HARMONIZED_CO2.HARMONIZED_CO2").collect()
+                min_co2 = minmax_sql[0]["MIN_CO2"]
+                max_co2 = minmax_sql[0]["MAX_CO2"]
+                
+        # Get source data
+        source_df = session.table("HARMONIZED_CO2.HARMONIZED_CO2")
+        
+        # Create weekly aggregations
+        weekly_df = source_df.group_by(
+            F.date_trunc("WEEK", F.col("DATE")).alias("WEEK_START")
+        ).agg(
+            F.avg("CO2_PPM").alias("AVG_WEEKLY_CO2"),
+            F.min("CO2_PPM").alias("WEEK_START_CO2"),
+            F.max("CO2_PPM").alias("WEEK_END_CO2")
+        )
+        
+        # Apply UDFs to create final DataFrame
+        result_df = weekly_df.select(
+            F.col("WEEK_START"),
+            F.col("AVG_WEEKLY_CO2"),
+            F.col("WEEK_START_CO2"),
+            F.col("WEEK_END_CO2"),
+            F.call_udf("ANALYTICS_CO2.CO2_DAILY_PERCENT_CHANGE", F.col("WEEK_START_CO2"), F.col("WEEK_END_CO2")).alias("WEEKLY_CHANGE"),
+            F.call_udf("ANALYTICS_CO2.CALCULATE_CO2_VOLATILITY", F.col("WEEK_END_CO2"), F.col("WEEK_START_CO2")).alias("WEEKLY_VOLATILITY"),
+            F.call_udf("ANALYTICS_CO2.NORMALIZE_CO2_UDF", F.col("AVG_WEEKLY_CO2"), F.lit(min_co2), F.lit(max_co2)).alias("NORMALIZED_WEEKLY_CO2"),
+            F.current_timestamp().alias("META_UPDATED_AT")
+        )
+        
+        # Merge the data into the target table
+        target_df = session.table("ANALYTICS_CO2.WEEKLY_CO2_STATS")
+        
+        # Define update dictionary
+        cols_to_update = {c: result_df[c] for c in result_df.schema.names}
+        
+        # Perform the merge operation
+        target_df.merge(
+            result_df,
+            (target_df["WEEK_START"] == result_df["WEEK_START"]),
+            [
+                F.when_matched().update(cols_to_update),
+                F.when_not_matched().insert(cols_to_update)
+            ]
+        )
+        
+        print("Weekly CO2 metrics processed successfully")
+        
+    except Exception as e:
+        print(f"Error processing weekly metrics: {str(e)}")
+        raise
+    finally:
+        # Scale warehouse back down
+        if current_warehouse:
+            session.sql(f"ALTER WAREHOUSE {current_warehouse} SET WAREHOUSE_SIZE = XSMALL").collect()
+
 def create_analytics_tables(session: Session) -> str:
     """
-    Creates a simplified analytics table in the ANALYTICS_CO2 schema.
-    This is a simpler version to avoid Snowflake execution errors.
+    Creates analytics tables with essential metrics using Python and SQL UDFs.
     """
-    current_warehouse = None
     try:
-        # Get current database from session
-        current_database = session.get_current_database()
-        print(f"Current database: {current_database}")
+        # First check if tables already exist
+        daily_exists = table_exists(session, schema='ANALYTICS_CO2', name='DAILY_CO2_STATS')
+        weekly_exists = table_exists(session, schema='ANALYTICS_CO2', name='WEEKLY_CO2_STATS')
         
-        # Use the current database instead of hardcoding CO2_DB_DEV
-        db_prefix = current_database
+        # Create the tables if they don't exist
+        if not daily_exists:
+            create_daily_stats_table(session)
+        if not weekly_exists:
+            create_weekly_stats_table(session)
         
-        # Get current warehouse from session for dynamic operations
-        current_warehouse = session.get_current_warehouse()
-        if not current_warehouse:
-            print("Warning: No current warehouse available in session.")
-            # Use environment-based warehouse as fallback if current isn't available
-            if env:
-                current_warehouse = f"co2_wh_{env}"
-                print(f"Using fallback warehouse: {current_warehouse}")
-            else:
-                raise ValueError("No warehouse specified and environment variable not set")
+        # Process and merge the data
+        process_daily_metrics(session)
+        process_weekly_metrics(session)
         
-        print(f"Using warehouse: {current_warehouse}")
-        
-        # Scale warehouse up for performance
-        session.sql(f"ALTER WAREHOUSE {current_warehouse} SET WAREHOUSE_SIZE = LARGE WAIT_FOR_COMPLETION = TRUE").collect()
-        print(f"Warehouse {current_warehouse} scaled up to LARGE")
-        
-        # First, create the needed UDFs if they don't exist
-        print("Creating UDFs if they don't exist...")
-        
-        # Create NORMALIZE_CO2_UDF
-        session.sql(f"""
-        CREATE OR REPLACE FUNCTION {db_prefix}.ANALYTICS_CO2.NORMALIZE_CO2_UDF(value FLOAT, min_val FLOAT, max_val FLOAT)
-        RETURNS FLOAT
-        AS
-        $$
-            CASE
-                WHEN max_val = min_val THEN 0.5
-                ELSE (value - min_val) / (max_val - min_val)
-            END
-        $$
-        """).collect()
-        print(f"Created {db_prefix}.ANALYTICS_CO2.NORMALIZE_CO2_UDF")
-        
-        # Create CALCULATE_CO2_VOLATILITY
-        session.sql(f"""
-        CREATE OR REPLACE FUNCTION {db_prefix}.ANALYTICS_CO2.CALCULATE_CO2_VOLATILITY(current_value FLOAT, previous_value FLOAT)
-        RETURNS FLOAT
-        AS
-        $$
-            CASE
-                WHEN previous_value IS NULL OR previous_value = 0 THEN 0
-                WHEN current_value IS NULL THEN 0
-                ELSE ABS(current_value - previous_value) / previous_value
-            END
-        $$
-        """).collect()
-        print(f"Created {db_prefix}.ANALYTICS_CO2.CALCULATE_CO2_VOLATILITY")
-        
-        # Create CO2_DAILY_PERCENT_CHANGE
-        session.sql(f"""
-        CREATE OR REPLACE FUNCTION {db_prefix}.ANALYTICS_CO2.CO2_DAILY_PERCENT_CHANGE(current_value FLOAT, previous_value FLOAT)
-        RETURNS FLOAT
-        AS
-        $$
-            CASE
-                WHEN previous_value IS NULL OR previous_value = 0 THEN 0
-                WHEN current_value IS NULL THEN 0
-                ELSE (current_value - previous_value) / previous_value * 100
-            END
-        $$
-        """).collect()
-        print(f"Created {db_prefix}.ANALYTICS_CO2.CO2_DAILY_PERCENT_CHANGE")
-        
-        # Create CO2_WEEKLY_PERCENT_CHANGE
-        session.sql(f"""
-        CREATE OR REPLACE FUNCTION {db_prefix}.ANALYTICS_CO2.CO2_WEEKLY_PERCENT_CHANGE(previous_value FLOAT, current_value FLOAT)
-        RETURNS FLOAT
-        AS
-        $$
-            CASE
-                WHEN previous_value IS NULL OR previous_value = 0 THEN 0
-                WHEN current_value IS NULL THEN 0
-                ELSE (current_value - previous_value) / previous_value * 100
-            END
-        $$
-        """).collect()
-        print(f"Created {db_prefix}.ANALYTICS_CO2.CO2_WEEKLY_PERCENT_CHANGE")
-
-        # Create a simpler daily analytics table without UDF calls initially
-        print("Creating simplified daily analytics table...")
-        daily_sql = f"""
-        CREATE OR REPLACE TABLE {db_prefix}.ANALYTICS_CO2.DAILY_ANALYTICS AS
-        SELECT
-            DATE,
-            YEAR,
-            MONTH AS MONTH_NUM,
-            DAY,
-            ROUND(CO2_PPM, 3) AS CO2_PPM,
-            ROUND({db_prefix}.ANALYTICS_CO2.NORMALIZE_CO2_UDF(CO2_PPM,
-            MIN(CO2_PPM) OVER (),
-            MAX(CO2_PPM) OVER ()), 3) AS NORMALIZED_CO2,
-            ROUND({db_prefix}.ANALYTICS_CO2.CALCULATE_CO2_VOLATILITY(CO2_PPM,
-            LAG(CO2_PPM) OVER (ORDER BY DATE)), 3) AS DAILY_VOLATILITY,
-            ROUND({db_prefix}.ANALYTICS_CO2.CO2_DAILY_PERCENT_CHANGE(CO2_PPM,
-            LAG(CO2_PPM) OVER (ORDER BY DATE)), 3) AS DAILY_PERCENTAGE_CHANGE,
-            DAYNAME(DATE) AS DAY_OF_WEEK,
-            MONTHNAME(DATE) AS MONTH_NAME
-        FROM {db_prefix}.HARMONIZED_CO2.HARMONIZED_CO2
-        """
-        session.sql(daily_sql).collect()
-        print(f"Created {db_prefix}.ANALYTICS_CO2.DAILY_ANALYTICS table")
-
-        # Try adding a derived column with simple calculations (no UDFs)
-        print("Adding derived columns...")
-        session.sql(f"""
-        CREATE OR REPLACE TABLE {db_prefix}.ANALYTICS_CO2.DAILY_CO2_STATS AS
-        SELECT
-            DATE,
-            CO2_PPM,
-            LAG(CO2_PPM) OVER (ORDER BY DATE) AS PREV_DAY_CO2,
-            CASE
-                WHEN LAG(CO2_PPM) OVER (ORDER BY DATE) > 0 THEN
-                    ROUND(((CO2_PPM - LAG(CO2_PPM) OVER (ORDER BY DATE)) / LAG(CO2_PPM) OVER (ORDER BY DATE)) * 100, 3)
-                ELSE NULL
-            END AS PERCENT_CHANGE
-        FROM {db_prefix}.HARMONIZED_CO2.HARMONIZED_CO2
-        """).collect()
-        print(f"Created {db_prefix}.ANALYTICS_CO2.DAILY_CO2_STATS table")
-
-        # Create a simple weekly summary table
-        print("Creating weekly summary table...")
-        session.sql(f"""
-        CREATE OR REPLACE TABLE {db_prefix}.ANALYTICS_CO2.WEEKLY_ANALYTICS AS
-        WITH weekly_base AS (
-          SELECT
-            DATE_TRUNC('WEEK', DATE) AS WEEK_START,
-            DATE,
-            CO2_PPM,
-            {db_prefix}.ANALYTICS_CO2.CALCULATE_CO2_VOLATILITY(
-              CO2_PPM,
-              LAG(CO2_PPM) OVER (PARTITION BY DATE_TRUNC('WEEK', DATE) ORDER BY DATE)
-            ) AS DAILY_VOLATILITY
-          FROM {db_prefix}.HARMONIZED_CO2.HARMONIZED_CO2
-        ),
-        weekly_with_rn AS (
-          SELECT
-            WEEK_START,
-            CO2_PPM,
-            DAILY_VOLATILITY,
-            ROW_NUMBER() OVER (PARTITION BY WEEK_START ORDER BY DATE DESC) AS rn
-          FROM weekly_base
-        ),
-        weekly_rollup AS (
-          SELECT
-            WEEK_START,
-            MAX(CASE WHEN rn = 1 THEN CO2_PPM END) AS LAST_CO2,
-            AVG(DAILY_VOLATILITY) AS WEEKLY_VOLATILITY
-          FROM weekly_with_rn
-          GROUP BY WEEK_START
-        )
-        SELECT
-          WEEK_START,
-          ROUND(LAST_CO2, 3) AS WEEKLY_CO2,
-          ROUND(WEEKLY_VOLATILITY, 3) AS WEEKLY_VOLATILITY,
-          ROUND({db_prefix}.ANALYTICS_CO2.NORMALIZE_CO2_UDF(
-              LAST_CO2,
-              MIN(LAST_CO2) OVER (),
-              MAX(LAST_CO2) OVER ()
-            ), 3) AS NORMALIZED_CO2,
-          ROUND({db_prefix}.ANALYTICS_CO2.CO2_WEEKLY_PERCENT_CHANGE(
-            LAG(LAST_CO2) OVER (ORDER BY WEEK_START),
-            LAST_CO2
-          ), 3) AS WEEKLY_PERCENTAGE_CHANGE
-        FROM weekly_rollup
-        """).collect()
-        print(f"Created {db_prefix}.ANALYTICS_CO2.WEEKLY_ANALYTICS table")
-
-        return f"Analytics tables created successfully in {db_prefix} database."
+        return "Analytics tables successfully processed"
     except Exception as e:
         print(f"Error creating analytics tables: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return f"Error: {str(e)}"
-    finally:
-        # Always scale warehouse back down, even if there's an error
-        try:
-            if current_warehouse:
-                session.sql(f"ALTER WAREHOUSE {current_warehouse} SET WAREHOUSE_SIZE = XSMALL").collect()
-                print(f"Warehouse {current_warehouse} scaled down to XSMALL")
-        except Exception as scaling_error:
-            print(f"Warning: Failed to scale down warehouse: {str(scaling_error)}")
-            
+    
 def main(session: Session) -> str:
     """Main function to be called by the stored procedure."""
     return create_analytics_tables(session)

@@ -1,0 +1,27 @@
+/*-----------------------------------------------------------------------------
+  table_grants.sql
+  Environment: {{ env.upper() }}
+
+  Generated from template for {{ env.upper() }} environment
+  Generated on: {{ current_date }}
+-----------------------------------------------------------------------------*/
+
+-- Switch context to the configured role/warehouse/database
+USE ROLE CO2_ROLE_{{ env.upper() }};
+USE WAREHOUSE CO2_WH_{{ env.upper() }};
+USE DATABASE {{ config.database_name }};
+
+-- Grant specific privileges on RAW_CO2 schema for co2 loading stored procedure.
+GRANT CREATE TABLE ON SCHEMA RAW_CO2 TO ROLE CO2_ROLE_{{ env.upper() }};
+GRANT INSERT,UPDATE ON TABLE RAW_CO2.CO2_DATA TO ROLE CO2_ROLE_{{ env.upper() }};
+
+-- Create transient table for temporary data storage
+CREATE OR REPLACE TRANSIENT TABLE RAW_CO2.CO2_DATA_TEMP (
+    DATE DATE,
+    CO2_PPM FLOAT,
+    CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    MODIFIED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+
+-- Grant privileges on transient table
+GRANT INSERT, UPDATE, DELETE ON TABLE RAW_CO2.CO2_DATA_TEMP TO ROLE CO2_ROLE_{{ env.upper() }};

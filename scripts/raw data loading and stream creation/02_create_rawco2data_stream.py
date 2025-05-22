@@ -16,7 +16,12 @@ import sys
 load_dotenv('.env')
 
 # Ensure the templates directory path is correct
-template_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates", "environment.json")
+# Get the directory of the current script
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# Go up one level to reach the project root
+project_root = os.path.dirname(os.path.dirname(current_dir))
+# Build the path to environment.json
+template_path = os.path.join(project_root, "templates", "environment.json")
 print(f"Looking for configuration at: {template_path}")
 
 try:
