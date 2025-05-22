@@ -386,25 +386,14 @@ def fetch_co2_data_incremental(session, env):
         return f"ERROR: CO2 data pipeline failed: {str(e)}"
 
 def main(session):
-    """Entry point function for the stored procedure."""
-    # Simplified environment detection - only get from Snowflake
-    env = ""
-    
+    """Entry point function for the stored procedure."""    
     try:
         # Get from current warehouse name
         warehouse = session.get_current_warehouse()
-        if warehouse and warehouse.lower().startswith("co2_wh_"):
-            env = warehouse.lower().replace("co2_wh_", "")
-            print(f"Detected environment from warehouse name: {env}")
-        else:
-            # Fallback to environment variable
-            env = os.getenv("SNOWFLAKE_ENV", "").lower()
-            print(f"Using environment from Snowflake env vars: {env}")
+        env = warehouse.lower().replace("co2_wh_", "")
+        print(f"Detected environment from warehouse name: {env}")
     except Exception as e:
         print(f"Could not detect environment: {e}")
-        env = ""  # Default fallback
-        print(f"Using default environment: {env}")
-
     print(f"Using Snowflake environment: {env}")
     return fetch_co2_data_incremental(session, env)
 

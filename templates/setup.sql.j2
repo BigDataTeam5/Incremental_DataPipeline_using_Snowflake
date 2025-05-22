@@ -60,9 +60,6 @@ GRANT CREATE TABLE ON SCHEMA {{ schema }} TO ROLE CO2_ROLE_{{ env.upper() }};
 GRANT CREATE PROCEDURE ON SCHEMA {{ schema }} TO ROLE CO2_ROLE_{{ env.upper() }};
 {% endif %}
 {% endfor %}
--- Grant specific privileges on RAW_CO2 schema for co2 loading stored procedure.
-GRANT CREATE TRANSIENT TABLE ON SCHEMA RAW_CO2 TO ROLE CO2_ROLE_{{ env.upper() }};
-GRANT INSERT,UPDATE ON TABLE RAW_CO2.CO2_DATA TO ROLE CO2_ROLE_{{ env.upper() }};
 -- Step 6: Create file format and stage
 USE SCHEMA EXTERNAL;
 
