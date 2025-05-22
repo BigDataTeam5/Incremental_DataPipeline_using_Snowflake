@@ -14,7 +14,8 @@ The pipeline follows a multi-layer data architecture:
 3. **Analytics Layer** - Derived tables with aggregations, metrics, and enriched attributes for an!
 4. **External Layer** - Storing all the stages and for implementing external access integration and policies for external outbound network call.
 
-![Snowflake (4)](https://github.com/user-attachments/assets/fc49c7b6-77c8-4e3f-a36f-145011727b87)
+![image](https://github.com/user-attachments/assets/547b0cdb-94e1-4f8e-97e6-059b052e0cc8)
+
 
 
 
